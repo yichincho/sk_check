@@ -70,14 +70,14 @@ fun SettingsScreen(onAskNotify: () -> Unit) {
             fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
         KeyPanel(
-            title = "① NVIDIA 金鑰",
-            help = "到 build.nvidia.com 申請，nvapi- 開頭。測試時會抓最新清單、挑出能看圖的熱門 Top 5。",
+            title = "① NVIDIA NIM API 金鑰",
+            help = "到 build.nvidia.com 申請（通常 nvapi- 開頭）。從即時清單挑選 GLM、NVIDIA Nemotron、Qwen 等識圖候選，並測試圖片輸入；純文字 GLM 不列入。",
             initial = settings.nvidiaKey,
             save = { k -> Store.updateSettings { it.copy(nvidiaKey = k) } },
             test = { k ->
                 val top = Nvidia.verify(k)
                 Store.updateSettings { s -> s.copy(visionModels = top, visionModel = if (s.visionModel in top) s.visionModel else top.first()) }
-                "金鑰可用，已抓到最新的識圖模型"
+                "圖片測試通過，優先模型：${top.first()}；其他模型為清單候選，辨識時自動備援"
             },
         ) {
             ModelChoice(settings.visionModels, settings.visionModel) { m -> Store.updateSettings { it.copy(visionModel = m) } }
@@ -99,13 +99,13 @@ fun SettingsScreen(onAskNotify: () -> Unit) {
 
         KeyPanel(
             title = "③ DeepSeek 金鑰（備案）",
-            help = "到 platform.deepseek.com 申請。DeepSeek 只有看圖專用的模型能讀截圖（目前是實驗版），排在最後。",
+            help = "到 platform.deepseek.com 申請。使用即時清單的圖片能力選擇模型，優先 deepseek-flash；自動更新舊實驗版名稱。",
             initial = settings.deepseekKey,
             save = { k -> Store.updateSettings { it.copy(deepseekKey = k) } },
             test = { k ->
                 val m = DeepSeek.verify(k)
                 Store.updateSettings { it.copy(deepseekModel = m) }
-                "金鑰可用，看圖模型：$m"
+                "圖片測試通過，模型：$m"
             },
         ) {
             Text("模型：${settings.deepseekModel}", fontFamily = Mono, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)

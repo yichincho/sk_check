@@ -42,7 +42,7 @@ class SettingsStore(context: Context) {
             geminiModels = prefs.getString("geminiModels", null)?.split('\n')?.filter { it.isNotBlank() }
                 ?.takeIf { it.isNotEmpty() } ?: d.geminiModels,
             deepseekKey = prefs.getString("deepseekKey", d.deepseekKey)!!,
-            deepseekModel = prefs.getString("deepseekModel", d.deepseekModel)!!,
+            deepseekModel = prefs.getString("deepseekModel", d.deepseekModel)!!.let { if (it == DeepSeek.LEGACY_MODEL) DeepSeek.DEFAULT_MODEL else it },
         )
     }
 

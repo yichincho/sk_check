@@ -6,6 +6,9 @@ import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
 
+/** Accept a copied Authorization value as well as a plain key. */
+internal fun apiKey(key: String): String = key.trim().replace(Regex("^Bearer\\s+", RegexOption.IGNORE_CASE), "").trim()
+
 /** Turns an error reply into a short readable message. */
 internal fun apiCheck(who: String, code: Int, body: String) {
     if (code in 200..299) return
@@ -17,7 +20,8 @@ internal fun apiCheck(who: String, code: Int, body: String) {
     }
     val hint = when (code) {
         400 -> "（這個模型可能不收圖片）"
-        401, 403 -> "（金鑰不對）"
+        401 -> "（金鑰無效或已過期）"
+        403 -> "（沒有模型權限，或服務受限）"
         402 -> "（餘額不足）"
         404, 410 -> "（這個模型不存在或已下架）"
         429 -> "（用太快或額度用完了）"
@@ -33,7 +37,7 @@ object Gemini {
     private val UNWANTED = listOf("image", "tts", "live", "audio", "embedding", "robotics", "computer", "native", "learnlm", "gemma")
 
     fun listModels(key: String): List<String> {
-        val req = Request.Builder().url("$BASE/models?pageSize=200").header("x-goog-api-key", key).build()
+        val req = Request.Builder().url("$BASE/models?pageSize=200").header("x-goog-api-key", apiKey(key)).build()
         val (code, body) = Http.call(req, "Gemini")
         apiCheck("Gemini", code, body)
         val models = JSONObject(body).optJSONArray("models") ?: JSONArray()
@@ -59,7 +63,7 @@ object Gemini {
             .put("contents", JSONArray().put(JSONObject().put("role", "user").put("parts", parts)))
             .put("generationConfig", config)
         val req = Request.Builder().url("$BASE/models/$model:generateContent")
-            .header("x-goog-api-key", key)
+            .header("x-goog-api-key", apiKey(key))
             .post(body.toString().toRequestBody(Http.JSON))
             .build()
         val (code, text) = Http.call(req, "Gemini")
@@ -84,40 +88,60 @@ object Gemini {
     }
 }
 
-/** DeepSeek's official API; only its vision model can read pictures, so it is the last choice. */
+/** DeepSeek official API; image capability comes from model metadata, not its name. */
 object DeepSeek {
-    const val DEFAULT_MODEL = "deepseek-v4-flash-vision-exp"
+    const val DEFAULT_MODEL = "deepseek-flash"
+    const val LEGACY_MODEL = "deepseek-v4-flash-vision-exp"
     private const val BASE = "https://api.deepseek.com"
 
+    fun visionModels(body: String): List<String> =
+        (JSONObject(body).optJSONArray("data") ?: JSONArray()).mapObjects { it }
+            .filter { m ->
+                val modalities = m.optJSONArray("input_modalities")
+                if (modalities != null) "image" in modalities.strings()
+                else m.optString("id").let { it == DEFAULT_MODEL || "vision" in it || "-vl" in it }
+            }.map { it.optString("id") }.filter { it.isNotBlank() }.distinct()
+            .sortedWith(compareBy<String> { if (it == DEFAULT_MODEL) 0 else 1 }.thenByDescending { it })
+
     fun listModels(key: String): List<String> {
-        val req = Request.Builder().url("$BASE/models").header("Authorization", "Bearer $key").build()
+        val req = Request.Builder().url("$BASE/models").header("Authorization", "Bearer ${apiKey(key)}").build()
         val (code, body) = Http.call(req, "DeepSeek")
         apiCheck("DeepSeek", code, body)
-        return (JSONObject(body).optJSONArray("data") ?: JSONArray()).mapObjects { it.optString("id") }.filter { it.isNotBlank() }
+        return visionModels(body)
     }
 
     private fun chat(key: String, model: String, content: Any, maxTokens: Int): String {
         val body = JSONObject()
-            .put("model", model)
+            .put("model", if (model == LEGACY_MODEL) DEFAULT_MODEL else model)
+            .put("thinking", JSONObject().put("type", "disabled"))
             .put("temperature", 0.1)
             .put("max_tokens", maxTokens)
             .put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", content)))
         val req = Request.Builder().url("$BASE/chat/completions")
-            .header("Authorization", "Bearer $key")
+            .header("Authorization", "Bearer ${apiKey(key)}")
             .post(body.toString().toRequestBody(Http.JSON))
             .build()
         val (code, text) = Http.call(req, "DeepSeek")
         apiCheck("DeepSeek", code, text)
-        return JSONObject(text).optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("message")?.optString("content")
+        return JSONObject(text).optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("message")?.optString("content")?.takeIf { it.isNotBlank() && it != "null" }
             ?: throw NetException("DeepSeek 沒有回答")
     }
 
-    /** Checks the key and returns the vision model to use (the newest one listed, else the known default). */
+    /** Probe images, trying the currently advertised vision models in order. */
     fun verify(key: String): String {
-        val vision = listModels(key).filter { "vision" in it || "-vl" in it }.sortedDescending()
-        val model = vision.firstOrNull() ?: DEFAULT_MODEL
-        chat(key, model, "Reply with OK.", 8)
-        return model
+        val models = listModels(key)
+        if (models.isEmpty()) throw NetException("DeepSeek 尚未提供此帳號可用的圖片模型")
+        val errors = mutableListOf<String>()
+        for (model in models) {
+            try {
+                chat(key, model, Nvidia.visionProbe(), 1024)
+                return model
+            } catch (e: NetException) {
+                if (e.httpCode in listOf(401, 402, 429)) throw e
+                errors.add("$model：${e.message}")
+            }
+        }
+        throw NetException("DeepSeek 識圖測試未通過：\n" + errors.joinToString("\n"))
     }
 
     fun readShot(key: String, model: String, jpegBase64: String): ShotResult {
