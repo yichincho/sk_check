@@ -76,7 +76,7 @@ fun SettingsScreen(onAskNotify: () -> Unit) {
             save = { k -> Store.updateSettings { it.copy(nvidiaKey = k) } },
             test = { k ->
                 val top = Nvidia.verify(k)
-                Store.updateSettings { s -> s.copy(visionModels = top, visionModel = if (s.visionModel in top) s.visionModel else top.first()) }
+                Store.updateSettings { s -> s.copy(visionModels = top, visionModel = top.first()) }
                 "圖片測試通過，優先模型：${top.first()}；其他模型為清單候選，辨識時自動備援"
             },
         ) {
