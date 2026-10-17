@@ -32,7 +32,7 @@ internal fun apiCheck(who: String, code: Int, body: String) {
 
 /** Google Gemini, used as the second choice for reading screenshots. */
 object Gemini {
-    const val DEFAULT_MODEL = "gemini-flash-latest"
+    const val DEFAULT_MODEL = "gemini-3.8-flash"
     private const val BASE = "https://generativelanguage.googleapis.com/v1beta"
     private val UNWANTED = listOf("image", "tts", "live", "audio", "embedding", "robotics", "computer", "native", "learnlm", "gemma")
 
@@ -49,11 +49,10 @@ object Gemini {
     /** Up to five models that read images: the rolling "flash-latest" first, then newest flash, then pro. */
     fun pick(all: List<String>): List<String> {
         val ok = all.filter { id -> id.startsWith("gemini") && UNWANTED.none { it in id } }
-        val latest = ok.filter { it == "gemini-flash-latest" }
-        val flash = ok.filter { "flash" in it && it !in latest && "lite" !in it }.sortedDescending()
-        val pro = ok.filter { "pro" in it }.sortedDescending()
+        val flash = ok.filter { "flash" in it && "lite" !in it && "latest" !in it }.sortedDescending()
         val lite = ok.filter { "lite" in it }.sortedDescending()
-        return (latest + flash + pro + lite).distinct().take(5)
+        val pro = ok.filter { "pro" in it }.sortedDescending()
+        return (flash + lite + pro).distinct().take(8)
     }
 
     private fun generate(key: String, model: String, parts: JSONArray, json: Boolean, maxTokens: Int): String {
@@ -69,15 +68,26 @@ object Gemini {
         val (code, text) = Http.call(req, "Gemini")
         apiCheck("Gemini", code, text)
         val out = JSONObject(text).optJSONArray("candidates")?.optJSONObject(0)?.optJSONObject("content")?.optJSONArray("parts")
-            ?: throw NetException("Gemini 沒有回答")
+            ?: throw NetException("Gemini 回應沒有文字內容（可能被安全過濾或輸出長度不足）：${text.take(300)}")
         return (0 until out.length()).mapNotNull { out.optJSONObject(it)?.optString("text") }.joinToString("")
     }
 
     /** Checks the key with a one-word reply and returns the models to offer. */
     fun verify(key: String): List<String> {
-        val models = pick(listModels(key)).ifEmpty { listOf(DEFAULT_MODEL) }
-        generate(key, models.first(), JSONArray().put(JSONObject().put("text", "Reply with OK.")), json = false, maxTokens = 16)
-        return models
+        val models = pick(listModels(key))
+        if (models.isEmpty()) throw NetException("此金鑰沒有可用的 Gemini 文字／圖片候選模型")
+        val errors = mutableListOf<String>()
+        for (model in models) {
+            try {
+                val reply = generate(key, model, JSONArray().put(JSONObject().put("text", "Reply with OK.")), json = false, maxTokens = 256)
+                if (reply.isNotBlank()) return models
+                errors.add("$model：空白回應")
+            } catch (e: NetException) {
+                if (e.httpCode in listOf(401, 403, 429)) throw e
+                errors.add("$model：${e.message}")
+            }
+        }
+        throw NetException("Gemini 模型測試均未通過：\\n" + errors.joinToString("\\n"))
     }
 
     fun readShot(key: String, model: String, jpegBase64: String): ShotResult {
@@ -173,7 +183,7 @@ object Vision {
             attempt("NVIDIA") { Nvidia.readShot(s.nvidiaKey, s.visionModel, s.visionModels, jpegBase64) }?.let { return it }
         }
         if (s.geminiKey.isNotBlank()) {
-            val models = (listOf(s.geminiModel) + s.geminiModels).distinct().take(2)
+            val models = (listOf(s.geminiModel) + s.geminiModels).filter { it.isNotBlank() }.distinct().take(8)
             for (m in models) attempt("Gemini") { Gemini.readShot(s.geminiKey, m, jpegBase64) }?.let { return it }
         }
         if (s.deepseekKey.isNotBlank()) {
