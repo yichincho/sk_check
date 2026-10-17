@@ -1,0 +1,60 @@
+name: Build APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Test and build
+        run: |
+          set -o pipefail
+          ./gradlew --no-daemon testDebugUnitTest assembleRelease 2>&1 | tee build.log
+
+      - name: Name the APK
+        run: cp app/build/outputs/apk/release/app-release.apk sk-check.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sk-check-apk
+          path: sk-check.apk
+
+      # One rolling release, so the phone can always download from /releases/latest.
+      - name: Publish latest release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete latest --yes --cleanup-tag || true
+          gh release create latest sk-check.apk --title "最新版 v0.1.${GITHUB_RUN_NUMBER}" --notes "版本 v0.1.${GITHUB_RUN_NUMBER}，由 ${GITHUB_SHA::7} 自動建置。手機下載 sk-check.apk 後安裝，App「設定」頁最下面會顯示同一個版本號。"
+
+      # Keeps the last build's result and log on the build-logs branch, so problems can be read without the Actions page.
+      - name: Save build log
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RESULT: ${{ job.status }}
+        run: |
+          mkdir -p /tmp/logs
+          cp build.log /tmp/logs/build.log 2>/dev/null || echo "no build log" > /tmp/logs/build.log
+          grep -E "^e: |error:|FAILED|What went wrong" -A 3 /tmp/logs/build.log > /tmp/logs/errors.txt || true
+          echo "run ${GITHUB_RUN_NUMBER} ${GITHUB_SHA::7} ${RESULT}" > /tmp/logs/status.txt
+          cd /tmp/logs
+          git init -q -b build-logs
+          git -c user.name=ci -c user.email=ci@users.noreply.github.com add .
+          git -c user.name=ci -c user.email=ci@users.noreply.github.com commit -qm "build ${GITHUB_RUN_NUMBER}: ${RESULT}"
+          git push -qf "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" build-logs
