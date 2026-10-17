@@ -10,14 +10,21 @@ enum class RuleType(val label: String) {
     RISE("上漲"),
 }
 
-/** One alert on one stock. [lastFiredDay] (yyyy-MM-dd, Taipei) keeps it to one notification a day. */
+/**
+ * One alert on one stock. [lastFiredDay] (yyyy-MM-dd, Taipei), [fireCount] (notifications sent that day) and
+ * [lastFiredAt] (epoch ms) limit how often it notifies; a different day means the count starts again.
+ */
 data class Rule(
     val id: String,
     val type: RuleType,
     val value: Double,
     val enabled: Boolean = true,
     val lastFiredDay: String = "",
-)
+    val fireCount: Int = 0,
+    val lastFiredAt: Long = 0,
+) {
+    fun firesToday(today: String) = if (lastFiredDay == today) fireCount.coerceAtLeast(1) else 0
+}
 
 data class Stock(
     /** Yahoo symbol, e.g. 2330.TW or 6488.TWO. */
@@ -36,6 +43,9 @@ data class Stock(
     /** Epoch seconds of the quote Yahoo returned. */
     val quoteTime: Long = 0,
     val quoteError: String = "",
+    /** Highest and lowest prices of the session the quote belongs to; 0 when Yahoo didn't give them. */
+    val dayHigh: Double = 0.0,
+    val dayLow: Double = 0.0,
 ) {
     val code: String get() = symbol.substringBefore('.')
 
@@ -114,7 +124,7 @@ fun List<String>.toJson(): JSONArray = JSONArray().also { a -> forEach { a.put(i
 
 fun Rule.toJson(): JSONObject = JSONObject()
     .put("id", id).put("type", type.name).put("value", value)
-    .put("enabled", enabled).put("lastFiredDay", lastFiredDay)
+    .put("enabled", enabled).put("lastFiredDay", lastFiredDay).put("fireCount", fireCount).put("lastFiredAt", lastFiredAt)
 
 fun ruleFromJson(o: JSONObject) = Rule(
     id = o.optString("id"),
@@ -122,6 +132,8 @@ fun ruleFromJson(o: JSONObject) = Rule(
     value = o.optDouble("value", 0.0),
     enabled = o.optBoolean("enabled", true),
     lastFiredDay = o.optString("lastFiredDay"),
+    fireCount = o.optInt("fireCount", if (o.optString("lastFiredDay").isNotEmpty()) 1 else 0),
+    lastFiredAt = o.optLong("lastFiredAt", 0),
 )
 
 fun Stock.toJson(): JSONObject = JSONObject()
@@ -129,6 +141,7 @@ fun Stock.toJson(): JSONObject = JSONObject()
     .put("baseNote", baseNote).put("note", note).put("addedAt", addedAt)
     .put("rules", JSONArray().also { a -> rules.forEach { a.put(it.toJson()) } })
     .put("price", price).put("prevClose", prevClose).put("quoteTime", quoteTime).put("quoteError", quoteError)
+    .put("dayHigh", dayHigh).put("dayLow", dayLow)
 
 fun stockFromJson(o: JSONObject) = Stock(
     symbol = o.optString("symbol"),
@@ -143,6 +156,8 @@ fun stockFromJson(o: JSONObject) = Stock(
     prevClose = o.optDouble("prevClose", 0.0),
     quoteTime = o.optLong("quoteTime"),
     quoteError = o.optString("quoteError"),
+    dayHigh = o.optDouble("dayHigh", 0.0),
+    dayLow = o.optDouble("dayLow", 0.0),
 )
 
 fun ShotRow.toJson(): JSONObject = JSONObject()

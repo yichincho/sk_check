@@ -11,6 +11,15 @@ data class Settings(
     val intervalMin: Int = 15,
     val defaultDrop: Double = 5.0,
     val defaultRise: Double = 8.0,
+    /** A rule that stays hit notifies again after this many hours… */
+    val notifyGapHours: Int = 1,
+    /** …but no more than this many times a day. */
+    val notifyMaxPerDay: Int = 3,
+    val geminiKey: String = "",
+    val geminiModel: String = Gemini.DEFAULT_MODEL,
+    val geminiModels: List<String> = listOf(Gemini.DEFAULT_MODEL),
+    val deepseekKey: String = "",
+    val deepseekModel: String = DeepSeek.DEFAULT_MODEL,
 )
 
 class SettingsStore(context: Context) {
@@ -26,6 +35,14 @@ class SettingsStore(context: Context) {
             intervalMin = prefs.getInt("intervalMin", d.intervalMin),
             defaultDrop = prefs.getFloat("defaultDrop", d.defaultDrop.toFloat()).toDouble(),
             defaultRise = prefs.getFloat("defaultRise", d.defaultRise.toFloat()).toDouble(),
+            notifyGapHours = prefs.getInt("notifyGapHours", d.notifyGapHours),
+            notifyMaxPerDay = prefs.getInt("notifyMaxPerDay", d.notifyMaxPerDay),
+            geminiKey = prefs.getString("geminiKey", d.geminiKey)!!,
+            geminiModel = prefs.getString("geminiModel", d.geminiModel)!!,
+            geminiModels = prefs.getString("geminiModels", null)?.split('\n')?.filter { it.isNotBlank() }
+                ?.takeIf { it.isNotEmpty() } ?: d.geminiModels,
+            deepseekKey = prefs.getString("deepseekKey", d.deepseekKey)!!,
+            deepseekModel = prefs.getString("deepseekModel", d.deepseekModel)!!,
         )
     }
 
@@ -37,6 +54,13 @@ class SettingsStore(context: Context) {
             .putInt("intervalMin", s.intervalMin)
             .putFloat("defaultDrop", s.defaultDrop.toFloat())
             .putFloat("defaultRise", s.defaultRise.toFloat())
+            .putInt("notifyGapHours", s.notifyGapHours)
+            .putInt("notifyMaxPerDay", s.notifyMaxPerDay)
+            .putString("geminiKey", s.geminiKey)
+            .putString("geminiModel", s.geminiModel)
+            .putString("geminiModels", s.geminiModels.joinToString("\n"))
+            .putString("deepseekKey", s.deepseekKey)
+            .putString("deepseekModel", s.deepseekModel)
             .apply()
     }
 }

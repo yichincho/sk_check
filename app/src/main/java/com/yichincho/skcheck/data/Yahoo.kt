@@ -33,6 +33,8 @@ data class Quote(
     val price: Double,
     val prevClose: Double,
     val time: Long,
+    val dayHigh: Double = 0.0,
+    val dayLow: Double = 0.0,
 )
 
 /**
@@ -69,12 +71,25 @@ object Yahoo {
         val prev = listOf("chartPreviousClose", "previousClose", "regularMarketPreviousClose")
             .map { meta.optDouble(it, 0.0) }.firstOrNull { !it.isNaN() && it > 0 } ?: 0.0
         val name = meta.optString("shortName").ifBlank { meta.optString("longName") }.ifBlank { symbol }
+        // The day's range: from meta when present, otherwise from the session's candles.
+        val candles = result.optJSONObject("indicators")?.optJSONArray("quote")?.optJSONObject(0)
+        fun series(key: String): List<Double> {
+            val a = candles?.optJSONArray(key) ?: return emptyList()
+            return (0 until a.length()).map { a.optDouble(it, Double.NaN) }.filter { !it.isNaN() && it > 0 }
+        }
+        val high = meta.optDouble("regularMarketDayHigh", Double.NaN).takeIf { !it.isNaN() && it > 0 }
+            ?: series("high").maxOrNull() ?: 0.0
+        val low = meta.optDouble("regularMarketDayLow", Double.NaN).takeIf { !it.isNaN() && it > 0 }
+            ?: series("low").minOrNull() ?: 0.0
         return Quote(
             symbol = meta.optString("symbol").ifBlank { symbol },
             name = name,
             price = price,
             prevClose = prev,
             time = meta.optLong("regularMarketTime", 0),
+            // The current price is always inside the day's range, even if Yahoo's range lags behind it.
+            dayHigh = if (high > 0) maxOf(high, price) else price,
+            dayLow = if (low > 0) minOf(low, price) else price,
         )
     }
 

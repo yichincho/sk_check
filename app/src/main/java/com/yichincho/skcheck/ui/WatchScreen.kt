@@ -156,9 +156,13 @@ private fun StockRow(s: Stock, today: String, onClick: () -> Unit) {
             )
             Text("今日 ${fmtPct(diff)}", fontFamily = Mono, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = changeColor(diff))
         }
+        if (s.dayHigh > 0 && s.dayLow > 0) {
+            Text("今日 高 ${fmtPrice(s.dayHigh)} · 低 ${fmtPrice(s.dayLow)}", fontFamily = Mono, fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
         if (s.firedToday(today)) {
             val r = s.rules.first { it.lastFiredDay == today }
-            Pill("已觸發 · ${Rules.title(r)}", m.alertFg, MaterialTheme.colorScheme.surfaceContainer)
+            Pill("已觸發 · ${Rules.title(r)} · 今天通知 ${r.firesToday(today)} 次", m.alertFg, MaterialTheme.colorScheme.surfaceContainer)
         }
         if (s.quoteError.isNotEmpty()) {
             Text(s.quoteError, fontSize = 12.sp, color = MaterialTheme.colorScheme.error)

@@ -150,6 +150,7 @@ object Store {
                             note = if (n.note.isNotBlank()) n.note else old.note,
                             rules = keep + fresh,
                             price = q.price, prevClose = q.prevClose, quoteTime = q.time, quoteError = "",
+                            dayHigh = q.dayHigh, dayLow = q.dayLow,
                         )
                     }
                     report.add("${q.symbol} $name：已在清單，更新規則")
@@ -165,6 +166,7 @@ object Store {
                         addedAt = System.currentTimeMillis(),
                         rules = rulesFor(n),
                         price = q.price, prevClose = q.prevClose, quoteTime = q.time,
+                        dayHigh = q.dayHigh, dayLow = q.dayLow,
                     )
                     synchronized(this) { stocks.value = stocks.value + stock }
                     saveStocks()
@@ -192,6 +194,7 @@ object Store {
                     updateStock(s.symbol) {
                         it.copy(
                             price = q.price, prevClose = q.prevClose, quoteTime = q.time, quoteError = "",
+                            dayHigh = q.dayHigh, dayLow = q.dayLow,
                             basePrice = if (it.basePrice > 0) it.basePrice else q.price,
                         )
                     }
@@ -218,19 +221,25 @@ object Store {
 
     private fun checkAlerts() {
         val today = todayTaipei()
+        val now = System.currentTimeMillis()
+        val set = settings.value
+        val limits = Rules.Limits(set.notifyGapHours, set.notifyMaxPerDay)
+        var any = false
         for (s in stocks.value) {
-            val due = Rules.toFire(s, today)
+            val due = Rules.toFire(s, today, now, limits)
             if (due.isEmpty()) continue
+            any = true
+            val updated = due.associate { it.id to Rules.fired(it, today, now) }
             for (r in due) {
+                val n = updated.getValue(r.id).fireCount
                 val text = Rules.firedText(r, s)
-                val ev = AlertEvent(newId(), s.symbol, s.name, text, s.price, System.currentTimeMillis())
+                val ev = AlertEvent(newId(), s.symbol, s.name, text, s.price, now)
                 synchronized(this) { events.value = (listOf(ev) + events.value).take(300) }
-                Notifier.alert(appContext, s, text, r.id)
+                Notifier.alert(appContext, s, "$text（今天第 $n/${limits.maxPerDay} 次）", r.id)
             }
-            val ids = due.map { it.id }.toSet()
-            updateStock(s.symbol) { st -> st.copy(rules = st.rules.map { if (it.id in ids) it.copy(lastFiredDay = today) else it }) }
+            updateStock(s.symbol) { st -> st.copy(rules = st.rules.map { updated[it.id] ?: it }) }
         }
-        saveEvents()
+        if (any) saveEvents()
     }
 
     // ---------- snapshots, trades ----------

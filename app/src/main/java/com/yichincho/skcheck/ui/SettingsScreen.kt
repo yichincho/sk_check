@@ -41,6 +41,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.yichincho.skcheck.BuildConfig
+import com.yichincho.skcheck.data.DeepSeek
+import com.yichincho.skcheck.data.Gemini
 import com.yichincho.skcheck.data.NetException
 import com.yichincho.skcheck.data.Nvidia
 import com.yichincho.skcheck.data.Store
@@ -55,11 +57,6 @@ import kotlinx.coroutines.withContext
 fun SettingsScreen(onAskNotify: () -> Unit) {
     val context = LocalContext.current
     val settings by Store.settings.collectAsStateWithLifecycle()
-    val scope = rememberCoroutineScope()
-    var key by remember { mutableStateOf(settings.nvidiaKey) }
-    var testing by remember { mutableStateOf(false) }
-    var result by remember { mutableStateOf("") }
-    var ok by remember { mutableStateOf(false) }
     var drop by remember { mutableStateOf(fmtNum(settings.defaultDrop)) }
     var rise by remember { mutableStateOf(fmtNum(settings.defaultRise)) }
 
@@ -69,60 +66,67 @@ fun SettingsScreen(onAskNotify: () -> Unit) {
     ) {
         Text("設定", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
 
-        Panel {
-            SectionTitle("NVIDIA API 金鑰（截圖辨識用）")
-            Text("到 build.nvidia.com 申請，貼上 nvapi- 開頭的金鑰。只存在這支手機。", fontSize = 13.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(vertical = 6.dp))
-            OutlinedTextField(
-                key, { key = it.trim() },
-                label = { Text("金鑰") }, singleLine = true,
-                visualTransformation = PasswordVisualTransformation(),
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Button(
-                onClick = {
-                    testing = true
-                    result = ""
-                    Store.updateSettings { it.copy(nvidiaKey = key) }
-                    scope.launch {
-                        try {
-                            val top = withContext(Dispatchers.IO) { Nvidia.verify(key) }
-                            Store.updateSettings { s -> s.copy(visionModels = top, visionModel = if (s.visionModel in top) s.visionModel else top.first()) }
-                            ok = true
-                            result = "金鑰可用，已抓到最新的識圖模型"
-                        } catch (e: NetException) {
-                            ok = false
-                            result = e.message ?: "測試失敗"
-                        } catch (e: Exception) {
-                            ok = false
-                            result = "測試失敗：${e.message}"
-                        }
-                        testing = false
-                    }
-                },
-                enabled = key.isNotBlank() && !testing,
-                modifier = Modifier.padding(top = 8.dp),
-            ) { Text(if (testing) "測試中…" else "儲存並測試金鑰") }
-            if (result.isNotEmpty()) {
-                Text(result, fontSize = 13.sp, color = if (ok) LocalMarketColors.current.down else MaterialTheme.colorScheme.error)
-            }
+        Text("截圖辨識依序用 NVIDIA → Gemini → DeepSeek，有填金鑰的才會用；一家失敗就自動換下一家。金鑰只存在這支手機。",
+            fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+        KeyPanel(
+            title = "① NVIDIA 金鑰",
+            help = "到 build.nvidia.com 申請，nvapi- 開頭。測試時會抓最新清單、挑出能看圖的熱門 Top 5。",
+            initial = settings.nvidiaKey,
+            save = { k -> Store.updateSettings { it.copy(nvidiaKey = k) } },
+            test = { k ->
+                val top = Nvidia.verify(k)
+                Store.updateSettings { s -> s.copy(visionModels = top, visionModel = if (s.visionModel in top) s.visionModel else top.first()) }
+                "金鑰可用，已抓到最新的識圖模型"
+            },
+        ) {
+            ModelChoice(settings.visionModels, settings.visionModel) { m -> Store.updateSettings { it.copy(visionModel = m) } }
+        }
+
+        KeyPanel(
+            title = "② Gemini 金鑰（備案）",
+            help = "到 aistudio.google.com 申請。NVIDIA 讀不出來時改用 Gemini。",
+            initial = settings.geminiKey,
+            save = { k -> Store.updateSettings { it.copy(geminiKey = k) } },
+            test = { k ->
+                val models = Gemini.verify(k)
+                Store.updateSettings { s -> s.copy(geminiModels = models, geminiModel = if (s.geminiModel in models) s.geminiModel else models.first()) }
+                "金鑰可用"
+            },
+        ) {
+            ModelChoice(settings.geminiModels, settings.geminiModel) { m -> Store.updateSettings { it.copy(geminiModel = m) } }
+        }
+
+        KeyPanel(
+            title = "③ DeepSeek 金鑰（備案）",
+            help = "到 platform.deepseek.com 申請。DeepSeek 只有看圖專用的模型能讀截圖（目前是實驗版），排在最後。",
+            initial = settings.deepseekKey,
+            save = { k -> Store.updateSettings { it.copy(deepseekKey = k) } },
+            test = { k ->
+                val m = DeepSeek.verify(k)
+                Store.updateSettings { it.copy(deepseekModel = m) }
+                "金鑰可用，看圖模型：$m"
+            },
+        ) {
+            Text("模型：${settings.deepseekModel}", fontFamily = Mono, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
 
         Panel {
-            SectionTitle("識圖模型 · 熱門 Top 5")
-            Text("測試金鑰時從 NVIDIA 抓最新清單、挑出能看圖的模型。第一個失敗會自動換下一個。", fontSize = 13.sp,
+            SectionTitle("通知頻率")
+            Text("用當天最高／最低價判斷有沒有到價；條件一直成立時，每隔一段時間再提醒一次。", fontSize = 13.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(vertical = 6.dp))
-            settings.visionModels.forEachIndexed { i, m ->
-                Row(
-                    Modifier.fillMaxWidth()
-                        .selectable(selected = settings.visionModel == m, role = Role.RadioButton,
-                            onClick = { Store.updateSettings { it.copy(visionModel = m) } })
-                        .padding(vertical = 2.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    RadioButton(selected = settings.visionModel == m, onClick = null)
-                    Text(m, fontFamily = Mono, fontSize = 12.sp, modifier = Modifier.weight(1f).padding(start = 8.dp))
-                    Text("#${i + 1}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("同一條規則多久再提醒", fontSize = 14.sp)
+            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+                listOf(1, 2, 3).forEachIndexed { i, h ->
+                    SegmentedButton(selected = settings.notifyGapHours == h, onClick = { Store.updateSettings { it.copy(notifyGapHours = h) } },
+                        shape = SegmentedButtonDefaults.itemShape(i, 3)) { Text("每 $h 小時") }
+                }
+            }
+            Text("一天最多幾次", fontSize = 14.sp)
+            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+                listOf(1, 2, 3, 5).forEachIndexed { i, n ->
+                    SegmentedButton(selected = settings.notifyMaxPerDay == n, onClick = { Store.updateSettings { it.copy(notifyMaxPerDay = n) } },
+                        shape = SegmentedButtonDefaults.itemShape(i, 4)) { Text("$n 次") }
                 }
             }
         }
@@ -183,5 +187,78 @@ fun SettingsScreen(onAskNotify: () -> Unit) {
         }
 
         Text("版本 v${BuildConfig.VERSION_NAME}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+private fun KeyPanel(
+    title: String,
+    help: String,
+    initial: String,
+    save: (String) -> Unit,
+    test: suspend (String) -> String,
+    extra: @Composable () -> Unit,
+) {
+    val scope = rememberCoroutineScope()
+    var key by remember { mutableStateOf(initial) }
+    var testing by remember { mutableStateOf(false) }
+    var result by remember { mutableStateOf("") }
+    var ok by remember { mutableStateOf(false) }
+    Panel {
+        SectionTitle(title)
+        Text(help, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(vertical = 6.dp))
+        OutlinedTextField(
+            key, { key = it.trim() },
+            label = { Text("金鑰") }, singleLine = true,
+            visualTransformation = PasswordVisualTransformation(),
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(vertical = 8.dp)) {
+            Button(
+                onClick = {
+                    testing = true
+                    result = ""
+                    save(key)
+                    scope.launch {
+                        try {
+                            result = withContext(Dispatchers.IO) { test(key) }
+                            ok = true
+                        } catch (e: NetException) {
+                            ok = false
+                            result = e.message ?: "測試失敗"
+                        } catch (e: Exception) {
+                            ok = false
+                            result = "測試失敗：${e.message}"
+                        }
+                        testing = false
+                    }
+                },
+                enabled = key.isNotBlank() && !testing,
+            ) { Text(if (testing) "測試中…" else "儲存並測試") }
+            if (initial.isNotBlank()) {
+                OutlinedButton(onClick = { key = ""; save(""); result = "已清除" ; ok = true }) { Text("清除") }
+            }
+        }
+        if (result.isNotEmpty()) {
+            Text(result, fontSize = 13.sp, color = if (ok) LocalMarketColors.current.down else MaterialTheme.colorScheme.error)
+        }
+        if (initial.isNotBlank()) extra()
+    }
+}
+
+@Composable
+private fun ModelChoice(models: List<String>, chosen: String, onPick: (String) -> Unit) {
+    Text("優先使用的模型", fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 4.dp))
+    models.forEachIndexed { i, m ->
+        Row(
+            Modifier.fillMaxWidth()
+                .selectable(selected = chosen == m, role = Role.RadioButton, onClick = { onPick(m) })
+                .padding(vertical = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            RadioButton(selected = chosen == m, onClick = null)
+            Text(m, fontFamily = Mono, fontSize = 12.sp, modifier = Modifier.weight(1f).padding(start = 8.dp))
+            Text("#${i + 1}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
     }
 }

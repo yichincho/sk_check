@@ -66,6 +66,7 @@ fun DetailScreen(symbol: String, onBack: () -> Unit, onTrade: (Side) -> Unit, on
     val stocks by Store.stocks.collectAsStateWithLifecycle()
     val shots by Store.snapshots.collectAsStateWithLifecycle()
     val trades by Store.trades.collectAsStateWithLifecycle()
+    val settings by Store.settings.collectAsStateWithLifecycle()
     val s = stocks.firstOrNull { it.symbol == symbol }
     if (s == null) {
         BackBar("找不到這檔", onBack = onBack)
@@ -98,6 +99,10 @@ fun DetailScreen(symbol: String, onBack: () -> Unit, onTrade: (Side) -> Unit, on
                     Text("今日 ${fmtPct(vsPrev)}", fontFamily = Mono, fontWeight = FontWeight.Bold, color = changeColor(vsPrev),
                         modifier = Modifier.padding(bottom = 6.dp))
                 }
+                if (s.dayHigh > 0 && s.dayLow > 0) {
+                    Text("今日 高 ${fmtPrice(s.dayHigh)} · 低 ${fmtPrice(s.dayLow)}（到價以高低點判斷，現價只供參考）",
+                        fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
                 Spacer(Modifier.height(6.dp))
                 Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { editBase = true }.padding(vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically) {
@@ -128,7 +133,11 @@ fun DetailScreen(symbol: String, onBack: () -> Unit, onTrade: (Side) -> Unit, on
                             Text(Rules.title(r), fontWeight = FontWeight.Medium)
                             Text(Rules.describe(r, s).removePrefix(Rules.title(r)).trim().ifEmpty { "固定價格" },
                                 fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            if (r.lastFiredDay == today) Text("今天已通知", fontSize = 12.sp, color = m.alertFg, fontWeight = FontWeight.Bold)
+                            if (r.lastFiredDay == today) {
+                                Text("今天已通知 ${r.firesToday(today)}/${settings.notifyMaxPerDay} 次", fontSize = 12.sp, color = m.alertFg, fontWeight = FontWeight.Bold)
+                            } else if (r.enabled && Rules.isHitToday(r, s)) {
+                                Text("今天已到價", fontSize = 12.sp, color = m.alertFg, fontWeight = FontWeight.Bold)
+                            }
                         }
                         Switch(checked = r.enabled, onCheckedChange = { on ->
                             Store.updateStock(s.symbol) { st -> st.copy(rules = st.rules.map { if (it.id == r.id) it.copy(enabled = on, lastFiredDay = "") else it }) }

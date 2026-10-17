@@ -53,7 +53,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.yichincho.skcheck.data.Images
 import com.yichincho.skcheck.data.NetException
 import com.yichincho.skcheck.data.NewStock
-import com.yichincho.skcheck.data.Nvidia
+import com.yichincho.skcheck.data.Vision
 import com.yichincho.skcheck.data.ShotRow
 import com.yichincho.skcheck.data.Snapshot
 import com.yichincho.skcheck.data.Store
@@ -90,7 +90,7 @@ fun NewShotScreen(uri: Uri, onDone: () -> Unit) {
             val f = withContext(Dispatchers.IO) { Images.copyIn(context, uri, id) }
             fileName = f.name
             stage = ""
-            if (settings.nvidiaKey.isNotBlank()) runs++
+            if (Vision.hasAnyKey(settings)) runs++
         } catch (e: Exception) {
             stage = ""
             error = "這張圖打不開：${e.message}"
@@ -103,7 +103,7 @@ fun NewShotScreen(uri: Uri, onDone: () -> Unit) {
         try {
             val s = Store.settings.value
             val result = withContext(Dispatchers.IO) {
-                Nvidia.readShot(s.nvidiaKey, s.visionModel, s.visionModels, Images.toJpegBase64(Store.shotFile(fileName)))
+                Vision.readShot(s, Images.toJpegBase64(Store.shotFile(fileName))) { who -> stage = "$who 讀圖中…（約 10–60 秒）" }
             }
             title = result.title
             summary = result.summary
@@ -144,7 +144,7 @@ fun NewShotScreen(uri: Uri, onDone: () -> Unit) {
     }
 
     Column(Modifier.fillMaxSize().imePadding()) {
-        BackBar("截圖", if (model.isNotEmpty()) "辨識模型：${model.substringAfter('/')}" else "", ::leave)
+        BackBar("截圖", if (model.isNotEmpty()) "辨識模型：$model" else "", ::leave)
         Column(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
@@ -160,8 +160,8 @@ fun NewShotScreen(uri: Uri, onDone: () -> Unit) {
                 }
             }
             if (error.isNotEmpty()) Text(error, color = MaterialTheme.colorScheme.error, fontSize = 14.sp)
-            if (settings.nvidiaKey.isBlank()) {
-                Text("沒有 NVIDIA 金鑰，所以不辨識；可以直接寫說明、存截圖。", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (!Vision.hasAnyKey(settings)) {
+                Text("還沒設定 NVIDIA／Gemini／DeepSeek 金鑰，所以不辨識；可以直接寫說明、存截圖。", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             } else if (stage.isEmpty() && fileName.isNotEmpty()) {
                 OutlinedButton(onClick = { runs++ }) { Text(if (picks.isEmpty()) "辨識這張圖" else "重新辨識") }
             }

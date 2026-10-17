@@ -50,9 +50,37 @@ object Rules {
         }
     }
 
-    /** Rules that should notify now: enabled, hit, and not already sent today. */
-    fun toFire(stock: Stock, today: String): List<Rule> =
-        stock.rules.filter { it.enabled && it.lastFiredDay != today && isHit(it, stock.price, stock.base) }
+    /** The day's low for falling rules (≤ price, drop %), the day's high for rising ones; the last price if Yahoo gave no range. */
+    fun testedPrice(rule: Rule, stock: Stock): Double = when (rule.type) {
+        RuleType.BELOW, RuleType.DROP -> stock.dayLow.takeIf { it > 0 } ?: stock.price
+        RuleType.ABOVE, RuleType.RISE -> stock.dayHigh.takeIf { it > 0 } ?: stock.price
+    }
+
+    /** True when the day's low (or high) reached the line, even if the price has since moved back. */
+    fun isHitToday(rule: Rule, stock: Stock): Boolean = isHit(rule, testedPrice(rule, stock), stock.base)
+
+    /** How often a rule may notify: at most once per [gapHours], at most [maxPerDay] times a day. */
+    data class Limits(val gapHours: Int, val maxPerDay: Int)
+
+    /**
+     * Rules that should notify now: enabled, hit by today's range, under today's limit, and the gap since the
+     * last one has passed. A quote from an earlier day (before the market opens) never fires.
+     */
+    fun toFire(stock: Stock, today: String, nowMs: Long, limits: Limits): List<Rule> {
+        if (stock.quoteTime <= 0 || todayTaipei(Instant.ofEpochSecond(stock.quoteTime)) != today) return emptyList()
+        // Checks run every 5–15 minutes and can drift, so allow a few minutes' slack on the gap.
+        val gapMs = limits.gapHours * 3_600_000L - 5 * 60_000L
+        return stock.rules.filter { r ->
+            r.enabled && isHitToday(r, stock) && (
+                r.lastFiredDay != today ||
+                    (r.fireCount < limits.maxPerDay && nowMs - r.lastFiredAt >= gapMs)
+                )
+        }
+    }
+
+    /** The rule after a notification at [nowMs]. */
+    fun fired(rule: Rule, today: String, nowMs: Long): Rule =
+        rule.copy(lastFiredDay = today, fireCount = if (rule.lastFiredDay == today) rule.fireCount + 1 else 1, lastFiredAt = nowMs)
 
     fun title(rule: Rule): String = when (rule.type) {
         RuleType.BELOW -> "價格 ≤ ${fmtPrice(rule.value)}"
@@ -69,7 +97,7 @@ object Rules {
         }
     }
 
-    /** Text for the notification and the journal, e.g. "跌幅達 5%：1,025（基準 1,085）". */
+    /** Text for the notification and the journal, e.g. "跌幅達 5%：今日最低 1,028（基準 1,085），現價 1,040". */
     fun firedText(rule: Rule, stock: Stock): String {
         val head = when (rule.type) {
             RuleType.BELOW -> "跌到 ${fmtPrice(rule.value)} 以下"
@@ -77,9 +105,12 @@ object Rules {
             RuleType.DROP -> "跌幅達 ${fmtNum(rule.value)}%"
             RuleType.RISE -> "漲幅達 ${fmtNum(rule.value)}%"
         }
+        val falling = rule.type == RuleType.BELOW || rule.type == RuleType.DROP
+        val tested = testedPrice(rule, stock)
+        val label = if (falling) "今日最低" else "今日最高"
         val base = if (stock.base > 0 && (rule.type == RuleType.DROP || rule.type == RuleType.RISE))
-            "（基準 ${fmtPrice(stock.base)}，${fmtPct(changePct(stock.price, stock.base))}）" else ""
-        return "$head：${fmtPrice(stock.price)}$base"
+            "（基準 ${fmtPrice(stock.base)}，${fmtPct(changePct(tested, stock.base))}）" else ""
+        return "$head：$label ${fmtPrice(tested)}$base，現價 ${fmtPrice(stock.price)}"
     }
 }
 

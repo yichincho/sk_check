@@ -27,13 +27,52 @@ class LogicTest {
         assertFalse(Rules.isHit(Rule("d", RuleType.DROP, 5.0), 1.0, 0.0))
     }
 
+    // 2026-10-19 10:00 Taipei, a Monday.
+    private val now = ZonedDateTime.parse("2026-10-19T10:00:00+08:00[Asia/Taipei]").toInstant()
+    private val today = "2026-10-19"
+    private val limits = Rules.Limits(gapHours = 1, maxPerDay = 3)
+
+    private fun live(price: Double, low: Double, high: Double, vararg rules: Rule) =
+        stock(price, 1085.0, *rules).copy(dayLow = low, dayHigh = high, quoteTime = now.epochSecond)
+
     @Test
-    fun firesOncePerDay() {
-        val today = "2026-10-19"
+    fun dayLowCountsEvenAfterTheBounce() {
         val r = Rule("a", RuleType.DROP, 5.0)
-        assertEquals(1, Rules.toFire(stock(1000.0, 1085.0, r), today).size)
-        assertEquals(0, Rules.toFire(stock(1000.0, 1085.0, r.copy(lastFiredDay = today)), today).size)
-        assertEquals(0, Rules.toFire(stock(1000.0, 1085.0, r.copy(enabled = false)), today).size)
+        // Price is back at 1,050 but the day's low of 1,028 crossed the 1,030.75 line.
+        assertEquals(1, Rules.toFire(live(1050.0, 1028.0, 1060.0, r), today, now.toEpochMilli(), limits).size)
+        assertEquals(0, Rules.toFire(live(1050.0, 1040.0, 1060.0, r), today, now.toEpochMilli(), limits).size)
+        // Rising rules use the day's high.
+        val up = Rule("b", RuleType.ABOVE, 1100.0)
+        assertEquals(1, Rules.toFire(live(1050.0, 1040.0, 1101.0, up), today, now.toEpochMilli(), limits).size)
+    }
+
+    @Test
+    fun hourlyAndThreeTimesADay() {
+        val ms = now.toEpochMilli()
+        var r = Rule("a", RuleType.DROP, 5.0)
+        r = Rules.fired(r, today, ms)
+        assertEquals(1, r.fireCount)
+        // 30 minutes later: too soon.
+        assertEquals(0, Rules.toFire(live(1000.0, 1000.0, 1000.0, r), today, ms + 30 * 60_000, limits).size)
+        // An hour later: again.
+        assertEquals(1, Rules.toFire(live(1000.0, 1000.0, 1000.0, r), today, ms + 60 * 60_000, limits).size)
+        r = Rules.fired(Rules.fired(r, today, ms + 3_600_000), today, ms + 7_200_000)
+        assertEquals(3, r.fireCount)
+        // Third one sent: nothing more today, however long it waits.
+        assertEquals(0, Rules.toFire(live(1000.0, 1000.0, 1000.0, r), today, ms + 10 * 3_600_000, limits).size)
+        // Next day starts over.
+        val tomorrow = now.plusSeconds(86_400)
+        val s = live(1000.0, 1000.0, 1000.0, r).copy(quoteTime = tomorrow.epochSecond)
+        assertEquals(1, Rules.toFire(s, "2026-10-20", tomorrow.toEpochMilli(), limits).size)
+        assertEquals(1, Rules.fired(r, "2026-10-20", tomorrow.toEpochMilli()).fireCount)
+    }
+
+    @Test
+    fun yesterdaysQuoteNeverFires() {
+        val r = Rule("a", RuleType.DROP, 5.0)
+        val s = live(1000.0, 1000.0, 1000.0, r).copy(quoteTime = now.epochSecond - 86_400)
+        assertEquals(0, Rules.toFire(s, today, now.toEpochMilli(), limits).size)
+        assertEquals(0, Rules.toFire(live(1000.0, 1000.0, 1000.0, r.copy(enabled = false)), today, now.toEpochMilli(), limits).size)
     }
 
     @Test
@@ -49,8 +88,34 @@ class LogicTest {
             "chartPreviousClose":1085.0,"regularMarketTime":1792200000}}],"error":null}}"""
         val q = Yahoo.parse(body, "2330.TW")
         assertEquals(1025.0, q.price, 0.0)
+        // No range in meta and no candles: the range is just the price.
+        assertEquals(1025.0, q.dayLow, 0.0)
         assertEquals(1085.0, q.prevClose, 0.0)
         assertEquals("2330.TW", q.symbol)
+    }
+
+    @Test
+    fun parsesDayRange() {
+        val body = """{"chart":{"result":[{"meta":{"symbol":"2330.TW","regularMarketPrice":1040.0,"chartPreviousClose":1085.0,
+            "regularMarketDayHigh":1062.0,"regularMarketDayLow":1028.0,"regularMarketTime":1792200000}}]}}"""
+        val q = Yahoo.parse(body, "2330.TW")
+        assertEquals(1062.0, q.dayHigh, 0.0)
+        assertEquals(1028.0, q.dayLow, 0.0)
+        val candles = """{"chart":{"result":[{"meta":{"regularMarketPrice":1040.0},
+            "indicators":{"quote":[{"high":[1055.0,null,1061.0],"low":[1031.0,1027.5,null]}]}}]}}"""
+        val c = Yahoo.parse(candles, "2330.TW")
+        assertEquals(1061.0, c.dayHigh, 0.0)
+        assertEquals(1027.5, c.dayLow, 0.0)
+    }
+
+    @Test
+    fun picksGeminiModels() {
+        val all = listOf("gemini-2.5-flash", "gemini-flash-latest", "gemini-2.5-flash-image", "gemini-3-pro", "gemini-2.5-flash-lite",
+            "text-embedding-004", "gemini-3-flash")
+        val top = Gemini.pick(all)
+        assertEquals("gemini-flash-latest", top[0])
+        assertEquals("gemini-3-flash", top[1])
+        assertFalse(top.any { "image" in it || "embedding" in it })
     }
 
     @Test

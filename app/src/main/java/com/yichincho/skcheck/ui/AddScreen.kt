@@ -210,10 +210,10 @@ private fun ShotTab(onShot: (Uri) -> Unit) {
     Panel {
         Text("會做的事", fontWeight = FontWeight.Bold)
         Text("1. 截圖原檔存在手機裡。", fontSize = 14.sp)
-        Text("2. 用 NVIDIA 識圖模型讀出代號、名稱、說明、EPS、起始價→目前價。", fontSize = 14.sp)
+        Text("2. AI 讀出代號、名稱、說明、EPS、起始價→目前價（依序用 NVIDIA、Gemini、DeepSeek，失敗就換下一個）。", fontSize = 14.sp)
         Text("3. 你勾選要加入觀察的幾檔，寫下說明，一起存成一筆截圖紀錄。", fontSize = 14.sp)
     }
-    if (settings.nvidiaKey.isBlank()) {
-        Text("還沒設定 NVIDIA 金鑰：可以先存截圖和說明，辨識要到「設定」貼上金鑰。", color = MaterialTheme.colorScheme.error, fontSize = 13.sp)
+    if (!com.yichincho.skcheck.data.Vision.hasAnyKey(settings)) {
+        Text("還沒設定任何 AI 金鑰：可以先存截圖和說明，辨識要到「設定」貼上 NVIDIA、Gemini 或 DeepSeek 金鑰。", color = MaterialTheme.colorScheme.error, fontSize = 13.sp)
     }
 }
