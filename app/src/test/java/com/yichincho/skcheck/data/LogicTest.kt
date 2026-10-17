@@ -113,8 +113,9 @@ class LogicTest {
         val all = listOf("gemini-2.5-flash", "gemini-flash-latest", "gemini-2.5-flash-image", "gemini-3-pro", "gemini-2.5-flash-lite",
             "text-embedding-004", "gemini-3-flash")
         val top = Gemini.pick(all)
-        assertEquals("gemini-flash-latest", top[0])
-        assertEquals("gemini-3-flash", top[1])
+        assertEquals("gemini-3-flash", top[0])
+        assertEquals("gemini-2.5-flash", top[1])
+        assertFalse(top.contains("gemini-flash-latest"))
         assertFalse(top.any { "image" in it || "embedding" in it })
     }
 
