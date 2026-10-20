@@ -83,9 +83,31 @@ data class Snapshot(
     val added: List<String>,
 )
 
+/** One screenshot that contains a stock, with that stock's row. */
+data class ShotHit(val shot: Snapshot, val row: ShotRow)
+
+/** Every screenshot that has [code], newest first. */
+fun shotHistory(snapshots: List<Snapshot>, code: String): List<ShotHit> =
+    snapshots.sortedByDescending { it.createdAt }.mapNotNull { sh -> sh.rows.firstOrNull { it.code == code }?.let { ShotHit(sh, it) } }
+
 /** The row for [code] on the newest screenshot that has it. */
-fun latestShotRow(snapshots: List<Snapshot>, code: String): ShotRow? =
-    snapshots.sortedByDescending { it.createdAt }.firstNotNullOfOrNull { sh -> sh.rows.firstOrNull { it.code == code } }
+fun latestShotRow(snapshots: List<Snapshot>, code: String): ShotRow? = shotHistory(snapshots, code).firstOrNull()?.row
+
+/** The score from the newest screenshot that has one; empty if none do. */
+fun List<ShotHit>.latestScore(): String = firstOrNull { it.row.score.isNotBlank() }?.row?.score.orEmpty()
+
+/** Fills the blank fields of [old] from the same-code row in [fresh]; anything already filled stays as the user left it. */
+fun mergeRows(old: List<ShotRow>, fresh: List<ShotRow>): List<ShotRow> = old.map { o ->
+    val f = fresh.firstOrNull { it.code == o.code } ?: return@map o
+    o.copy(
+        reason = o.reason.ifBlank { f.reason },
+        eps = o.eps.ifBlank { f.eps },
+        from = o.from.ifBlank { f.from },
+        to = o.to.ifBlank { f.to },
+        pct = o.pct.ifBlank { f.pct },
+        score = o.score.ifBlank { f.score },
+    )
+}
 
 enum class Side(val label: String) { BUY("買進"), SELL("賣出") }
 

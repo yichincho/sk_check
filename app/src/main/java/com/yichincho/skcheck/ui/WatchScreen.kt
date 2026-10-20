@@ -43,13 +43,15 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.yichincho.skcheck.data.Market
 import com.yichincho.skcheck.data.Rules
 import com.yichincho.skcheck.data.Stock
-import com.yichincho.skcheck.data.ShotRow
+import com.yichincho.skcheck.data.ShotHit
 import com.yichincho.skcheck.data.Store
 import com.yichincho.skcheck.data.changePct
+import com.yichincho.skcheck.data.fmtDayMs
 import com.yichincho.skcheck.data.fmtPct
 import com.yichincho.skcheck.data.fmtPrice
 import com.yichincho.skcheck.data.fmtTime
-import com.yichincho.skcheck.data.latestShotRow
+import com.yichincho.skcheck.data.latestScore
+import com.yichincho.skcheck.data.shotHistory
 import com.yichincho.skcheck.data.todayTaipei
 
 fun Stock.firedToday(today: String) = rules.any { it.lastFiredDay == today }
@@ -125,13 +127,14 @@ fun WatchScreen(onOpen: (String) -> Unit, onAdd: () -> Unit) {
             contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            items(shown, key = { it.symbol }) { s -> StockRow(s, latestShotRow(shots, s.code), today, onClick = { onOpen(s.symbol) }) }
+            items(shown, key = { it.symbol }) { s -> StockRow(s, shotHistory(shots, s.code), today, onClick = { onOpen(s.symbol) }) }
         }
     }
 }
 
 @Composable
-private fun StockRow(s: Stock, shot: ShotRow?, today: String, onClick: () -> Unit) {
+private fun StockRow(s: Stock, hits: List<ShotHit>, today: String, onClick: () -> Unit) {
+    val shot = hits.firstOrNull()?.row
     val diff = if (s.prevClose > 0) changePct(s.price, s.prevClose) else 0.0
     val m = LocalMarketColors.current
     Column(
@@ -147,9 +150,10 @@ private fun StockRow(s: Stock, shot: ShotRow?, today: String, onClick: () -> Uni
                 modifier = Modifier.weight(1f, fill = false))
             Spacer(Modifier.size(8.dp))
             Text(s.code, fontFamily = Mono, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            if (shot != null && shot.score.isNotBlank()) {
+            val score = hits.latestScore()
+            if (score.isNotBlank()) {
                 Spacer(Modifier.size(8.dp))
-                ScorePill(shot.score)
+                ScorePill(score)
             }
             Spacer(Modifier.weight(1f))
             Text(if (s.price > 0) fmtPrice(s.price) else "—", fontFamily = Mono, fontWeight = FontWeight.Bold, fontSize = 18.sp)
@@ -168,6 +172,15 @@ private fun StockRow(s: Stock, shot: ShotRow?, today: String, onClick: () -> Uni
             }
             Text("今日 ${fmtPct(diff)}", fontFamily = Mono, fontSize = 12.sp, color = changeColor(diff))
         }
+        val baseText = when {
+            s.baseIsPrevClose -> "基準 昨收"
+            s.base > 0 -> "基準 ${fmtPrice(s.base)}" + if (s.baseNote.isNotBlank()) "（${s.baseNote}）" else ""
+            else -> "基準 —"
+        }
+        Text(
+            "新增 ${fmtDayMs(s.addedAt)} · $baseText" + if (hits.size > 1) " · 截圖 ${hits.size} 次" else "",
+            fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis,
+        )
         if (shot != null && shot.reason.isNotBlank()) {
             Text("理由：${shot.reason}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }

@@ -136,3 +136,6 @@ fun fmtTime(epochSec: Long): String =
 
 fun fmtDateMs(ms: Long): String =
     Instant.ofEpochMilli(ms).atZone(TAIPEI).format(DateTimeFormatter.ofPattern("yyyy/M/d HH:mm"))
+
+fun fmtDayMs(ms: Long): String =
+    Instant.ofEpochMilli(ms).atZone(TAIPEI).format(DateTimeFormatter.ofPattern("MM/dd"))

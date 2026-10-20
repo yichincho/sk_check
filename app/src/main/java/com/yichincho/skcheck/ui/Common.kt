@@ -94,13 +94,19 @@ fun Pill(text: String, bg: Color, fg: Color) {
     )
 }
 
-/** 品質分數 pill: pink at 70 and above, yellow below; nothing when the screenshot had none. */
+/** 品質分數 pill: red at 80 and above, yellow at 60 and above, green below; nothing when the screenshot had none. */
 @Composable
 fun ScorePill(score: String) {
     if (score.isBlank()) return
     val m = LocalMarketColors.current
-    val high = (parseNumber(score) ?: 0.0) >= 70
-    Pill("品質 $score", if (high) m.alertBg else m.warnBg, if (high) m.alertFg else m.warnFg)
+    val v = parseNumber(score)
+    val (bg, fg) = when {
+        v == null -> MaterialTheme.colorScheme.surfaceVariant to MaterialTheme.colorScheme.onSurfaceVariant
+        v >= 80 -> m.alertBg to m.alertFg
+        v >= 60 -> m.warnBg to m.warnFg
+        else -> m.okBg to m.okFg
+    }
+    Pill("品質 $score", bg, fg)
 }
 
 @Composable
