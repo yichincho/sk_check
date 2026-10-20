@@ -83,6 +83,7 @@ fun NewShotScreen(uri: Uri, onDone: () -> Unit) {
     var editing by remember { mutableIntStateOf(-1) }
     var runs by remember { mutableIntStateOf(0) }
     var saving by remember { mutableStateOf("") }
+    var zoom by remember { mutableStateOf(false) }
 
     LaunchedEffect(uri) {
         stage = "複製截圖…"
@@ -150,7 +151,10 @@ fun NewShotScreen(uri: Uri, onDone: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             if (fileName.isNotEmpty()) {
-                Panel { ShotImage(fileName, Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp))) }
+                Panel {
+                    ShotImage(fileName, Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp)).clickable { zoom = true })
+                    Text("點圖可放大", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
+                }
             }
             if (stage.isNotEmpty()) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -207,11 +211,14 @@ fun NewShotScreen(uri: Uri, onDone: () -> Unit) {
         }
     }
 
+    if (zoom) ShotViewer(fileName, onDismiss = { zoom = false })
+
     if (editing in picks.indices) {
         val p = picks[editing]
         var code by remember(editing) { mutableStateOf(p.row.code) }
         var name by remember(editing) { mutableStateOf(p.row.name) }
         var price by remember(editing) { mutableStateOf(p.row.to) }
+        var score by remember(editing) { mutableStateOf(p.row.score) }
         AlertDialog(
             onDismissRequest = { editing = -1 },
             title = { Text("修正這一列") },
@@ -220,11 +227,12 @@ fun NewShotScreen(uri: Uri, onDone: () -> Unit) {
                     OutlinedTextField(code, { code = it }, label = { Text("代號") }, singleLine = true)
                     OutlinedTextField(name, { name = it }, label = { Text("名稱") }, singleLine = true)
                     OutlinedTextField(price, { price = it }, label = { Text("目前價（基準）") }, singleLine = true)
+                    OutlinedTextField(score, { score = it }, label = { Text("品質分數") }, singleLine = true)
                 }
             },
             confirmButton = {
                 TextButton(onClick = {
-                    picks[editing] = p.copy(row = p.row.copy(code = code.trim(), name = name.trim(), to = price.trim()))
+                    picks[editing] = p.copy(row = p.row.copy(code = code.trim(), name = name.trim(), to = price.trim(), score = score.trim()))
                     editing = -1
                 }) { Text("好") }
             },
@@ -236,14 +244,16 @@ fun NewShotScreen(uri: Uri, onDone: () -> Unit) {
 }
 
 @Composable
-private fun RowBody(r: ShotRow, modifier: Modifier = Modifier) {
+fun RowBody(r: ShotRow, modifier: Modifier = Modifier, full: Boolean = false) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(r.code, fontFamily = Mono, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.width(6.dp))
-            Text(r.name, fontWeight = FontWeight.Bold)
+            Text(r.name, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f, fill = false))
+            Spacer(Modifier.width(6.dp))
+            ScorePill(r.score)
         }
-        if (r.reason.isNotBlank()) Text(r.reason, fontSize = 13.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        if (r.reason.isNotBlank()) Text(r.reason, fontSize = 13.sp, maxLines = if (full) Int.MAX_VALUE else 2, overflow = TextOverflow.Ellipsis)
         if (r.eps.isNotBlank()) Text(r.eps, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         if (r.to.isNotBlank()) {
             val pct = parseNumber(r.pct) ?: 0.0
@@ -266,6 +276,7 @@ fun SavedShotScreen(id: String, onBack: () -> Unit, onOpenStock: (String) -> Uni
     var note by rememberSaveable(id) { mutableStateOf(s.note) }
     var confirm by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf("") }
+    var zoom by remember { mutableStateOf(false) }
 
     Column(Modifier.fillMaxSize().imePadding()) {
         BackBar("截圖紀錄", fmtDateMs(s.createdAt), onBack) {
@@ -275,7 +286,10 @@ fun SavedShotScreen(id: String, onBack: () -> Unit, onOpenStock: (String) -> Uni
             Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Panel { ShotImage(s.imageFile, Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp))) }
+            Panel {
+                ShotImage(s.imageFile, Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp)).clickable { zoom = true })
+                Text("點圖可放大", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
+            }
             OutlinedTextField(note, { note = it }, label = { Text("我的說明") }, minLines = 4, modifier = Modifier.fillMaxWidth())
             if (note.trim() != s.note) {
                 Button(onClick = { Store.updateSnapshot(id) { it.copy(note = note.trim()) } }) { Text("儲存說明") }
@@ -291,7 +305,7 @@ fun SavedShotScreen(id: String, onBack: () -> Unit, onOpenStock: (String) -> Uni
                 val onList = stocks.firstOrNull { it.code == r.code }
                 Panel(if (onList != null) Modifier.clickable { onOpenStock(onList.symbol) } else Modifier) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        RowBody(r, Modifier.weight(1f))
+                        RowBody(r, Modifier.weight(1f), full = true)
                         if (onList == null) {
                             TextButton(enabled = busy.isEmpty(), onClick = {
                                 Store.scope.launch {
@@ -311,6 +325,7 @@ fun SavedShotScreen(id: String, onBack: () -> Unit, onOpenStock: (String) -> Uni
             if (s.model.isNotBlank()) Text("辨識模型：${s.model}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
+    if (zoom) ShotViewer(s.imageFile, onDismiss = { zoom = false })
     if (confirm) {
         AlertDialog(
             onDismissRequest = { confirm = false },

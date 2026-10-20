@@ -54,10 +54,12 @@ import com.yichincho.skcheck.data.Side
 import com.yichincho.skcheck.data.Stock
 import com.yichincho.skcheck.data.Store
 import com.yichincho.skcheck.data.changePct
+import com.yichincho.skcheck.data.fmtDateMs
 import com.yichincho.skcheck.data.fmtNum
 import com.yichincho.skcheck.data.fmtPct
 import com.yichincho.skcheck.data.fmtPrice
 import com.yichincho.skcheck.data.fmtTime
+import com.yichincho.skcheck.data.latestShotRow
 import com.yichincho.skcheck.data.newId
 import com.yichincho.skcheck.data.todayTaipei
 
@@ -76,9 +78,12 @@ fun DetailScreen(symbol: String, onBack: () -> Unit, onTrade: (Side) -> Unit, on
     var editBase by remember { mutableStateOf(false) }
     var editInfo by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
+    var zoom by remember { mutableStateOf<String?>(null) }
     val today = todayTaipei()
     val myShots = shots.filter { sh -> sh.added.contains(s.symbol) || sh.rows.any { it.code == s.code } }
     val myTrades = trades.filter { it.symbol == s.symbol }
+    val infoRow = latestShotRow(shots, s.code)
+    val infoShot = shots.filter { sh -> sh.rows.any { it.code == s.code } }.maxByOrNull { it.createdAt }
     val m = LocalMarketColors.current
 
     Column(Modifier.fillMaxSize()) {
@@ -96,8 +101,10 @@ fun DetailScreen(symbol: String, onBack: () -> Unit, onTrade: (Side) -> Unit, on
                 Row(verticalAlignment = Alignment.Bottom) {
                     Text(if (s.price > 0) fmtPrice(s.price) else "—", fontFamily = Mono, fontSize = 34.sp, fontWeight = FontWeight.Bold)
                     Spacer(Modifier.width(10.dp))
-                    Text("今日 ${fmtPct(vsPrev)}", fontFamily = Mono, fontWeight = FontWeight.Bold, color = changeColor(vsPrev),
-                        modifier = Modifier.padding(bottom = 6.dp))
+                    Column(Modifier.padding(bottom = 6.dp)) {
+                        Text("相對基準 ${fmtPct(vsBase)}", fontFamily = Mono, fontWeight = FontWeight.Bold, fontSize = 17.sp, color = changeColor(vsBase))
+                        Text("今日 ${fmtPct(vsPrev)}", fontFamily = Mono, fontSize = 13.sp, color = changeColor(vsPrev))
+                    }
                 }
                 if (s.dayHigh > 0 && s.dayLow > 0) {
                     Text("今日 高 ${fmtPrice(s.dayHigh)} · 低 ${fmtPrice(s.dayLow)}（到價以高低點判斷，現價只供參考）",
@@ -111,13 +118,26 @@ fun DetailScreen(symbol: String, onBack: () -> Unit, onTrade: (Side) -> Unit, on
                             if (s.baseIsPrevClose) "基準：昨收 ${fmtPrice(s.prevClose)}" else "基準：${fmtPrice(s.basePrice)}（${s.baseNote}）",
                             fontSize = 14.sp,
                         )
-                        Text("相對基準 ${fmtPct(vsBase)}", fontFamily = Mono, fontSize = 13.sp, color = changeColor(vsBase))
                     }
                     Text("改基準", color = MaterialTheme.colorScheme.primary, fontSize = 14.sp)
                 }
                 if (s.note.isNotBlank()) {
                     HorizontalDivider(Modifier.padding(vertical = 8.dp), color = MaterialTheme.colorScheme.outlineVariant)
                     Text(s.note, fontSize = 14.sp)
+                }
+            }
+
+            if (infoRow != null && infoShot != null) {
+                Panel(Modifier.clickable { onOpenShot(infoShot.id) }) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("截圖資訊", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                        Text(fmtDateMs(infoShot.createdAt), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        ShotImage(infoShot.imageFile, Modifier.size(width = 96.dp, height = 72.dp).clip(RoundedCornerShape(6.dp))
+                            .clickable { zoom = infoShot.imageFile }, maxSide = 400, crop = true)
+                        RowBody(infoRow, Modifier.weight(1f), full = true)
+                    }
                 }
             }
 
@@ -174,10 +194,11 @@ fun DetailScreen(symbol: String, onBack: () -> Unit, onTrade: (Side) -> Unit, on
             myShots.forEach { sh ->
                 Panel(Modifier.clickable { onOpenShot(sh.id) }) {
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        ShotImage(sh.imageFile, Modifier.size(width = 96.dp, height = 72.dp).clip(RoundedCornerShape(6.dp)), maxSide = 400, crop = true)
+                        ShotImage(sh.imageFile, Modifier.size(width = 96.dp, height = 72.dp).clip(RoundedCornerShape(6.dp))
+                            .clickable { zoom = sh.imageFile }, maxSide = 400, crop = true)
                         Column(Modifier.weight(1f)) {
                             val row = sh.rows.firstOrNull { it.code == s.code }
-                            Text(com.yichincho.skcheck.data.fmtDateMs(sh.createdAt), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(fmtDateMs(sh.createdAt), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             if (row != null && row.reason.isNotBlank()) Text(row.reason, fontSize = 13.sp, maxLines = 2)
                             if (sh.note.isNotBlank()) Text(sh.note, fontSize = 14.sp, maxLines = 3)
                         }
@@ -187,6 +208,7 @@ fun DetailScreen(symbol: String, onBack: () -> Unit, onTrade: (Side) -> Unit, on
         }
     }
 
+    zoom?.let { ShotViewer(it, onDismiss = { zoom = null }) }
     if (addRule) AddRuleDialog(s, onDismiss = { addRule = false })
     if (editBase) BaseDialog(s, onDismiss = { editBase = false })
     if (editInfo) InfoDialog(s, onDismiss = { editInfo = false })

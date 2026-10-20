@@ -116,8 +116,8 @@ object Nvidia {
 
     const val PROMPT = """這是一張台股相關的截圖（可能是選股清單、看盤軟體或新聞）。請把圖上每一檔股票抄出來。
 只輸出 JSON，不要其他文字，格式：
-{"title":"圖上的標題或日期區間，沒有就空字串","summary":"整張圖的其他重點，例如平均報酬、是否結算，沒有就空字串","rows":[{"code":"股票代號","name":"股票名稱","reason":"名稱後面的說明文字","eps":"EPS 那一段的原文","from":"起始價","to":"目前價（箭頭右邊的價格；只有一個價格就填這裡）","pct":"漲跌幅，含正負號"}]}
-規則：只抄圖上看得到的字，看不到的欄位填空字串，不要猜也不要編。代號只填數字（和字母），不要加 .TW。不要輸出評分。"""
+{"title":"圖上的標題或日期區間，沒有就空字串","summary":"整張圖的其他重點，例如平均報酬、是否結算，沒有就空字串","rows":[{"code":"股票代號","name":"股票名稱","reason":"名稱後面的說明文字","eps":"EPS 那一段的原文","from":"起始價","to":"目前價（箭頭右邊的價格；只有一個價格就填這裡）","pct":"漲跌幅，含正負號","score":"品質分數（名稱旁邊框起來的數字，例如 94.4），沒有就空字串"}]}
+規則：只抄圖上看得到的字，看不到的欄位填空字串，不要猜也不要編。代號只填數字（和字母），不要加 .TW。品質分數只抄圖上的數字，不要自己評分。"""
 
     /** Sends the picture (a JPEG, base64) to [preferred] first, then the other models until one answers. */
     fun readShot(key: String, preferred: String, models: List<String>, jpegBase64: String): ShotResult {

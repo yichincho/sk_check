@@ -1,5 +1,6 @@
 package com.yichincho.skcheck.data
 
+import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -164,6 +165,36 @@ class LogicTest {
         assertEquals(1, r.rows.size)
         assertEquals("9904", r.rows[0].code)
         assertEquals("未結算，平均 +0.07%", r.summary)
+    }
+
+    @Test
+    fun parsesShotScore() {
+        val r = Nvidia.parseShot("""{"rows":[
+            {"code":"4583","name":"台灣精銳","reason":"","eps":"","from":"403","to":"403","pct":"0.00%","score":" 94.4 "},
+            {"code":"9904","name":"寶成","reason":"","eps":"","from":"25.05","to":"26.5","pct":"+5.79%"}]}""")
+        assertEquals("94.4", r.rows[0].score)
+        assertEquals(94.4, r.rows[0].scoreValue!!, 1e-9)
+        assertEquals("", r.rows[1].score)
+        assertEquals(null, r.rows[1].scoreValue)
+    }
+
+    @Test
+    fun oldRowJsonHasNoScore() {
+        val row = shotRowFromJson(JSONObject("""{"code":"9904","name":"寶成","reason":"","eps":"","from":"","to":"26.5","pct":""}"""))
+        assertEquals("", row.score)
+        assertEquals("59.7", shotRowFromJson(row.copy(score = "59.7").toJson()).score)
+    }
+
+    @Test
+    fun latestShotRowUsesNewestSnapshot() {
+        fun snap(id: String, at: Long, vararg rows: ShotRow) = Snapshot(id, at, "$id.img", "", "", "", "", rows.toList(), emptyList())
+        val old = snap("a", 100, ShotRow("9904", "寶成", "舊", "", "", "25", "", "50"))
+        val new = snap("b", 200, ShotRow("1101", "台泥", "", "", "", "40", ""), ShotRow("9904", "寶成", "新", "", "", "26", "", "94.4"))
+        assertEquals("94.4", latestShotRow(listOf(old, new), "9904")!!.score)
+        assertEquals("新", latestShotRow(listOf(old, new), "9904")!!.reason)
+        assertEquals("新", latestShotRow(listOf(new, old), "9904")!!.reason)
+        assertEquals("", latestShotRow(listOf(old, new), "1101")!!.score)
+        assertEquals(null, latestShotRow(listOf(old, new), "2330"))
     }
 
     @Test

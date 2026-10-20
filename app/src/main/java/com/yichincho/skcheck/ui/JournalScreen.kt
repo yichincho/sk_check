@@ -136,11 +136,14 @@ private fun TradeEntry(t: Trade, onClick: () -> Unit) {
 
 @Composable
 private fun ShotEntry(s: Snapshot, onClick: () -> Unit) {
+    var zoom by remember { mutableStateOf(false) }
+    if (zoom) ShotViewer(s.imageFile, onDismiss = { zoom = false })
     Panel(Modifier.clickable(onClick = onClick)) {
         Head("截圖", MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.onPrimaryContainer,
             s.title.ifBlank { "${s.rows.size} 檔" }, s.createdAt)
         Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            ShotImage(s.imageFile, Modifier.size(width = 88.dp, height = 64.dp).clip(RoundedCornerShape(6.dp)), maxSide = 400, crop = true)
+            ShotImage(s.imageFile, Modifier.size(width = 88.dp, height = 64.dp).clip(RoundedCornerShape(6.dp))
+                .clickable { zoom = true }, maxSide = 400, crop = true)
             Column(Modifier.weight(1f)) {
                 if (s.note.isNotBlank()) Text(s.note, fontSize = 14.sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
                 if (s.rows.isNotEmpty()) Text(s.rows.joinToString(" ") { it.code }, fontSize = 12.sp, fontFamily = Mono,

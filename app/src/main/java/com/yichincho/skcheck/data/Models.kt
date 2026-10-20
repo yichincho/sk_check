@@ -61,9 +61,12 @@ data class ShotRow(
     val from: String,
     val to: String,
     val pct: String,
+    /** 品質分數 shown next to the name on the screenshot (0–100), e.g. "94.4". */
+    val score: String = "",
 ) {
     /** The latest price on the screenshot, used as the starting point for alerts. */
     val toPrice: Double? get() = parseNumber(to)
+    val scoreValue: Double? get() = parseNumber(score)
 }
 
 /** A saved screenshot: the picture, what the AI read from it, and the user's own note. */
@@ -79,6 +82,10 @@ data class Snapshot(
     /** Symbols that were added to the watchlist from this screenshot. */
     val added: List<String>,
 )
+
+/** The row for [code] on the newest screenshot that has it. */
+fun latestShotRow(snapshots: List<Snapshot>, code: String): ShotRow? =
+    snapshots.sortedByDescending { it.createdAt }.firstNotNullOfOrNull { sh -> sh.rows.firstOrNull { it.code == code } }
 
 enum class Side(val label: String) { BUY("買進"), SELL("賣出") }
 
@@ -162,7 +169,7 @@ fun stockFromJson(o: JSONObject) = Stock(
 
 fun ShotRow.toJson(): JSONObject = JSONObject()
     .put("code", code).put("name", name).put("reason", reason).put("eps", eps)
-    .put("from", from).put("to", to).put("pct", pct)
+    .put("from", from).put("to", to).put("pct", pct).put("score", score)
 
 fun shotRowFromJson(o: JSONObject) = ShotRow(
     code = o.optString("code").trim(),
@@ -172,6 +179,7 @@ fun shotRowFromJson(o: JSONObject) = ShotRow(
     from = o.optString("from").trim(),
     to = o.optString("to").trim(),
     pct = o.optString("pct").trim(),
+    score = o.optString("score").trim(),
 )
 
 fun Snapshot.toJson(): JSONObject = JSONObject()
