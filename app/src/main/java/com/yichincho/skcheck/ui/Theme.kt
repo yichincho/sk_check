@@ -54,10 +54,10 @@ private val Dark = darkColorScheme(
 )
 
 /** Taiwan convention: up is red, down is green. */
-data class MarketColors(val up: Color, val down: Color, val alertBg: Color, val alertFg: Color, val warnBg: Color, val warnFg: Color)
+data class MarketColors(val up: Color, val down: Color, val alertBg: Color, val alertFg: Color, val warnBg: Color, val warnFg: Color, val okBg: Color, val okFg: Color)
 
-private val LightMarket = MarketColors(Color(0xFFB3122A), Color(0xFF0B6B37), Color(0xFFFFEDEA), Color(0xFFA3122A), Color(0xFFFFF3C4), Color(0xFF7A5900))
-private val DarkMarket = MarketColors(Color(0xFFFF8A8A), Color(0xFF6FD39A), Color(0xFF3F1C1E), Color(0xFFFFB4AB), Color(0xFF3D3410), Color(0xFFF5D76E))
+private val LightMarket = MarketColors(Color(0xFFB3122A), Color(0xFF0B6B37), Color(0xFFFFEDEA), Color(0xFFA3122A), Color(0xFFFFF3C4), Color(0xFF7A5900), Color(0xFFE3F4E8), Color(0xFF0B6B37))
+private val DarkMarket = MarketColors(Color(0xFFFF8A8A), Color(0xFF6FD39A), Color(0xFF3F1C1E), Color(0xFFFFB4AB), Color(0xFF3D3410), Color(0xFFF5D76E), Color(0xFF14301F), Color(0xFF6FD39A))
 
 val LocalMarketColors = staticCompositionLocalOf { LightMarket }
 

@@ -198,6 +198,40 @@ class LogicTest {
     }
 
     @Test
+    fun shotHistoryIsNewestFirstAndOnlyHits() {
+        fun snap(id: String, at: Long, vararg rows: ShotRow) = Snapshot(id, at, "$id.img", "", "", "", "", rows.toList(), emptyList())
+        val a = snap("a", 100, ShotRow("9904", "寶成", "", "", "", "25", "", "50"))
+        val b = snap("b", 300, ShotRow("1101", "台泥", "", "", "", "40", ""))
+        val c = snap("c", 200, ShotRow("9904", "寶成", "", "", "", "26", "", ""), ShotRow("1101", "台泥", "", "", "", "41", ""))
+        val hits = shotHistory(listOf(a, b, c), "9904")
+        assertEquals(listOf("c", "a"), hits.map { it.shot.id })
+        assertEquals("26", hits[0].row.to)
+        assertEquals(listOf("b", "c"), shotHistory(listOf(a, b, c), "1101").map { it.shot.id })
+        assertTrue(shotHistory(listOf(a, b, c), "2330").isEmpty())
+    }
+
+    @Test
+    fun latestScoreSkipsBlankScores() {
+        fun snap(id: String, at: Long, score: String) =
+            Snapshot(id, at, "$id.img", "", "", "", "", listOf(ShotRow("9904", "寶成", "", "", "", "25", "", score)), emptyList())
+        assertEquals("50", shotHistory(listOf(snap("a", 100, "50"), snap("b", 200, "")), "9904").latestScore())
+        assertEquals("80", shotHistory(listOf(snap("a", 100, "50"), snap("b", 200, "80")), "9904").latestScore())
+        assertEquals("", shotHistory(listOf(snap("a", 100, "")), "9904").latestScore())
+    }
+
+    @Test
+    fun mergeRowsFillsOnlyBlanks() {
+        val old = listOf(
+            ShotRow("9904", "寶成(我改的)", "", "EPS 2", "", "26", "", ""),
+            ShotRow("1101", "台泥", "舊理由", "", "", "40", "", ""),
+        )
+        val fresh = listOf(ShotRow("9904", "寶成", "新理由", "EPS 9", "25", "27", "+8%", "94.4"))
+        val merged = mergeRows(old, fresh)
+        assertEquals(ShotRow("9904", "寶成(我改的)", "新理由", "EPS 2", "25", "26", "+8%", "94.4"), merged[0])
+        assertEquals(old[1], merged[1])
+    }
+
+    @Test
     fun picksVisionModels() {
         val all = listOf(
             "meta/llama-3.2-90b-vision-instruct", "nvidia/nv-embedqa-e5-v5", "deepseek-ai/deepseek-v4.1",

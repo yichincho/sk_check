@@ -15,6 +15,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -35,11 +37,14 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -50,6 +55,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.yichincho.skcheck.data.Rule
 import com.yichincho.skcheck.data.RuleType
 import com.yichincho.skcheck.data.Rules
+import com.yichincho.skcheck.data.ShotHit
 import com.yichincho.skcheck.data.Side
 import com.yichincho.skcheck.data.Stock
 import com.yichincho.skcheck.data.Store
@@ -59,12 +65,41 @@ import com.yichincho.skcheck.data.fmtNum
 import com.yichincho.skcheck.data.fmtPct
 import com.yichincho.skcheck.data.fmtPrice
 import com.yichincho.skcheck.data.fmtTime
-import com.yichincho.skcheck.data.latestShotRow
 import com.yichincho.skcheck.data.newId
+import com.yichincho.skcheck.data.shotHistory
 import com.yichincho.skcheck.data.todayTaipei
 
+/** The detail screen with left/right swipes to the neighbouring stocks in watchlist order; [onCurrent] follows the settled page. */
 @Composable
-fun DetailScreen(symbol: String, onBack: () -> Unit, onTrade: (Side) -> Unit, onOpenShot: (String) -> Unit) {
+fun DetailPager(start: String, onBack: () -> Unit, onTrade: (String, Side) -> Unit, onOpenShot: (String) -> Unit, onCurrent: (String) -> Unit) {
+    val stocks by Store.stocks.collectAsStateWithLifecycle()
+    val pager = rememberPagerState(initialPage = stocks.indexOfFirst { it.symbol == start }.coerceAtLeast(0)) { stocks.size }
+    val current by rememberUpdatedState(onCurrent)
+    val latestStart by rememberUpdatedState(start)
+    LaunchedEffect(pager) {
+        snapshotFlow { pager.settledPage }.collect { page ->
+            val list = Store.stocks.value
+            if (list.any { it.symbol == latestStart }) list.getOrNull(page)?.let { current(it.symbol) }
+        }
+    }
+    LaunchedEffect(start) {
+        val i = Store.stocks.value.indexOfFirst { it.symbol == start }
+        if (i >= 0 && i != pager.currentPage && !pager.isScrollInProgress) pager.scrollToPage(i)
+    }
+    if (stocks.none { it.symbol == start }) {
+        BackBar("找不到這檔", onBack = onBack)
+        return
+    }
+    HorizontalPager(state = pager, key = { stocks.getOrNull(it)?.symbol ?: it }) { page ->
+        val sym = stocks.getOrNull(page)?.symbol
+        if (sym != null) {
+            DetailScreen(sym, onBack, { side -> onTrade(sym, side) }, onOpenShot, position = "${page + 1}/${stocks.size} 左右滑動切換")
+        }
+    }
+}
+
+@Composable
+fun DetailScreen(symbol: String, onBack: () -> Unit, onTrade: (Side) -> Unit, onOpenShot: (String) -> Unit, position: String = "") {
     val stocks by Store.stocks.collectAsStateWithLifecycle()
     val shots by Store.snapshots.collectAsStateWithLifecycle()
     val trades by Store.trades.collectAsStateWithLifecycle()
@@ -82,12 +117,12 @@ fun DetailScreen(symbol: String, onBack: () -> Unit, onTrade: (Side) -> Unit, on
     val today = todayTaipei()
     val myShots = shots.filter { sh -> sh.added.contains(s.symbol) || sh.rows.any { it.code == s.code } }
     val myTrades = trades.filter { it.symbol == s.symbol }
-    val infoRow = latestShotRow(shots, s.code)
-    val infoShot = shots.filter { sh -> sh.rows.any { it.code == s.code } }.maxByOrNull { it.createdAt }
+    val history = shotHistory(shots, s.code)
+    val otherShots = myShots.filter { sh -> history.none { it.shot.id == sh.id } }
     val m = LocalMarketColors.current
 
     Column(Modifier.fillMaxSize()) {
-        BackBar("${s.name} ${s.code}", "更新 ${fmtTime(s.quoteTime)} · Yahoo Finance", onBack) {
+        BackBar("${s.name} ${s.code}", "更新 ${fmtTime(s.quoteTime)} · Yahoo Finance" + if (position.isNotEmpty()) " · $position" else "", onBack) {
             IconButton(onClick = { editInfo = true }) { Icon(Icons.Rounded.Edit, contentDescription = "改名稱和備註") }
             IconButton(onClick = { confirmDelete = true }) { Icon(Icons.Rounded.Delete, contentDescription = "從清單移除") }
         }
@@ -127,18 +162,9 @@ fun DetailScreen(symbol: String, onBack: () -> Unit, onTrade: (Side) -> Unit, on
                 }
             }
 
-            if (infoRow != null && infoShot != null) {
-                Panel(Modifier.clickable { onOpenShot(infoShot.id) }) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("截圖資訊", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                        Text(fmtDateMs(infoShot.createdAt), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        ShotImage(infoShot.imageFile, Modifier.size(width = 96.dp, height = 72.dp).clip(RoundedCornerShape(6.dp))
-                            .clickable { zoom = infoShot.imageFile }, maxSide = 400, crop = true)
-                        RowBody(infoRow, Modifier.weight(1f), full = true)
-                    }
-                }
+            if (history.isNotEmpty()) {
+                SectionTitle("截圖紀錄（${history.size} 次）")
+                history.forEach { ShotHistoryCard(it, s, onOpen = { id -> onOpenShot(id) }, onZoom = { f -> zoom = f }) }
             }
 
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -189,17 +215,15 @@ fun DetailScreen(symbol: String, onBack: () -> Unit, onTrade: (Side) -> Unit, on
                 myTrades.forEach { TradeCard(it) }
             }
 
-            SectionTitle("截圖與說明")
+            if (history.isEmpty() || otherShots.isNotEmpty()) SectionTitle("截圖與說明")
             if (myShots.isEmpty()) Text("還沒有含這檔的截圖", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            myShots.forEach { sh ->
+            otherShots.forEach { sh ->
                 Panel(Modifier.clickable { onOpenShot(sh.id) }) {
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         ShotImage(sh.imageFile, Modifier.size(width = 96.dp, height = 72.dp).clip(RoundedCornerShape(6.dp))
                             .clickable { zoom = sh.imageFile }, maxSide = 400, crop = true)
                         Column(Modifier.weight(1f)) {
-                            val row = sh.rows.firstOrNull { it.code == s.code }
                             Text(fmtDateMs(sh.createdAt), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            if (row != null && row.reason.isNotBlank()) Text(row.reason, fontSize = 13.sp, maxLines = 2)
                             if (sh.note.isNotBlank()) Text(sh.note, fontSize = 14.sp, maxLines = 3)
                         }
                     }
@@ -220,6 +244,39 @@ fun DetailScreen(symbol: String, onBack: () -> Unit, onTrade: (Side) -> Unit, on
             confirmButton = { TextButton(onClick = { confirmDelete = false; Store.removeStock(s.symbol); onBack() }) { Text("移除") } },
             dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("取消") } },
         )
+    }
+}
+
+/** One upload of this stock: when, the score and price on it, how the price has moved since, and what it said. */
+@Composable
+private fun ShotHistoryCard(hit: ShotHit, s: Stock, onOpen: (String) -> Unit, onZoom: (String) -> Unit) {
+    val (sh, row) = hit
+    val shotPrice = row.toPrice ?: 0.0
+    Panel(Modifier.clickable { onOpen(sh.id) }) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("新增 ${fmtDateMs(sh.createdAt)}", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+            ScorePill(row.score)
+        }
+        val priceText = row.to.ifBlank { row.from }
+        if (priceText.isNotBlank()) {
+            Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("截圖價 $priceText", fontFamily = Mono, fontSize = 13.sp, modifier = Modifier.weight(1f, fill = false))
+                if (shotPrice > 0 && s.price > 0) {
+                    val vs = changePct(s.price, shotPrice)
+                    Spacer(Modifier.width(10.dp))
+                    Text("相對截圖 ${fmtPct(vs)}", fontFamily = Mono, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = changeColor(vs))
+                }
+            }
+        }
+        Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            ShotImage(sh.imageFile, Modifier.size(width = 96.dp, height = 72.dp).clip(RoundedCornerShape(6.dp))
+                .clickable { onZoom(sh.imageFile) }, maxSide = 400, crop = true)
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                if (row.reason.isNotBlank()) Text(row.reason, fontSize = 13.sp)
+                if (row.eps.isNotBlank()) Text(row.eps, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (sh.note.isNotBlank()) Text(sh.note, fontSize = 14.sp, maxLines = 3)
+            }
+        }
     }
 }
 

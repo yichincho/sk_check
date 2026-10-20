@@ -58,6 +58,7 @@ import com.yichincho.skcheck.data.ShotRow
 import com.yichincho.skcheck.data.Snapshot
 import com.yichincho.skcheck.data.Store
 import com.yichincho.skcheck.data.fmtDateMs
+import com.yichincho.skcheck.data.mergeRows
 import com.yichincho.skcheck.data.newId
 import com.yichincho.skcheck.data.parseNumber
 import kotlinx.coroutines.Dispatchers
@@ -268,6 +269,7 @@ fun RowBody(r: ShotRow, modifier: Modifier = Modifier, full: Boolean = false) {
 fun SavedShotScreen(id: String, onBack: () -> Unit, onOpenStock: (String) -> Unit) {
     val shots by Store.snapshots.collectAsStateWithLifecycle()
     val stocks by Store.stocks.collectAsStateWithLifecycle()
+    val settings by Store.settings.collectAsStateWithLifecycle()
     val s = shots.firstOrNull { it.id == id }
     if (s == null) {
         BackBar("找不到這張截圖", onBack = onBack)
@@ -276,7 +278,26 @@ fun SavedShotScreen(id: String, onBack: () -> Unit, onOpenStock: (String) -> Uni
     var note by rememberSaveable(id) { mutableStateOf(s.note) }
     var confirm by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf("") }
+    var rescans by remember { mutableIntStateOf(0) }
     var zoom by remember { mutableStateOf(false) }
+
+    LaunchedEffect(rescans) {
+        if (rescans == 0) return@LaunchedEffect
+        busy = "AI 讀圖中…（約 10–60 秒）"
+        error = ""
+        try {
+            val result = withContext(Dispatchers.IO) {
+                Vision.readShot(Store.settings.value, Images.toJpegBase64(Store.shotFile(s.imageFile))) { who -> busy = "$who 讀圖中…（約 10–60 秒）" }
+            }
+            Store.updateSnapshot(id) { it.copy(rows = mergeRows(it.rows, result.rows)) }
+        } catch (e: NetException) {
+            error = e.message ?: "讀圖失敗"
+        } catch (e: Exception) {
+            error = "讀圖失敗：${e.message}"
+        }
+        busy = ""
+    }
 
     Column(Modifier.fillMaxSize().imePadding()) {
         BackBar("截圖紀錄", fmtDateMs(s.createdAt), onBack) {
@@ -321,7 +342,11 @@ fun SavedShotScreen(id: String, onBack: () -> Unit, onOpenStock: (String) -> Uni
                     }
                 }
             }
+            if (s.rows.isNotEmpty() && Vision.hasAnyKey(settings)) {
+                OutlinedButton(onClick = { rescans++ }, enabled = busy.isEmpty()) { Text("重新辨識（補品質分數）") }
+            }
             if (busy.isNotEmpty()) Text(busy, fontSize = 13.sp)
+            if (error.isNotEmpty()) Text(error, color = MaterialTheme.colorScheme.error, fontSize = 14.sp)
             if (s.model.isNotBlank()) Text("辨識模型：${s.model}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }

@@ -40,7 +40,7 @@ import com.yichincho.skcheck.data.Side
 import com.yichincho.skcheck.data.Store
 import com.yichincho.skcheck.ui.AddScreen
 import com.yichincho.skcheck.ui.AppTheme
-import com.yichincho.skcheck.ui.DetailScreen
+import com.yichincho.skcheck.ui.DetailPager
 import com.yichincho.skcheck.ui.JournalScreen
 import com.yichincho.skcheck.ui.NewShotScreen
 import com.yichincho.skcheck.ui.SavedShotScreen
@@ -146,11 +146,12 @@ private fun AppRoot(incomingShot: MutableState<Uri?>, incomingSymbol: MutableSta
         }
         detailSym != null -> FullScreen {
             BackHandler { detail = null }
-            DetailScreen(
+            DetailPager(
                 detailSym,
                 onBack = { detail = null },
-                onTrade = { side -> tradeSide = side; trade = detailSym },
+                onTrade = { symbol, side -> tradeSide = side; trade = symbol },
                 onOpenShot = { shotView = it },
+                onCurrent = { detail = it },
             )
         }
         else -> Scaffold(
