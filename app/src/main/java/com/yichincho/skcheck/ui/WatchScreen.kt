@@ -17,6 +17,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.NotificationsActive
@@ -45,6 +51,8 @@ import com.yichincho.skcheck.data.Rules
 import com.yichincho.skcheck.data.Stock
 import com.yichincho.skcheck.data.ShotHit
 import com.yichincho.skcheck.data.Store
+import com.yichincho.skcheck.data.Watch
+import com.yichincho.skcheck.data.WatchSort
 import com.yichincho.skcheck.data.changePct
 import com.yichincho.skcheck.data.fmtDayMs
 import com.yichincho.skcheck.data.fmtPct
@@ -65,15 +73,17 @@ fun WatchScreen(onOpen: (String) -> Unit, onAdd: () -> Unit) {
     val status by Store.status.collectAsStateWithLifecycle()
     val settings by Store.settings.collectAsStateWithLifecycle()
     var filter by rememberSaveable { mutableIntStateOf(0) }
+    var query by rememberSaveable { mutableStateOf("") }
 
     val today = todayTaipei()
     val fired = stocks.filter { it.firedToday(today) }
     val held = stocks.filter { s -> trades.filter { it.symbol == s.symbol }.sumOf { if (it.side.name == "BUY") it.qty else -it.qty } > 0 }
-    val shown = when (filter) {
+    val picked = when (filter) {
         1 -> fired
         2 -> held
         else -> stocks
     }
+    val shown = Watch.sort(Watch.filter(picked, query), settings.watchSort, settings.watchSortDesc)
     val newest = stocks.maxOfOrNull { it.quoteTime } ?: 0
 
     Column(Modifier.fillMaxSize()) {
@@ -111,6 +121,43 @@ fun WatchScreen(onOpen: (String) -> Unit, onAdd: () -> Unit) {
             FilterChip(selected = filter == 0, onClick = { filter = 0 }, label = { Text("全部 ${stocks.size}") })
             FilterChip(selected = filter == 1, onClick = { filter = 1 }, label = { Text("已觸發 ${fired.size}") })
             FilterChip(selected = filter == 2, onClick = { filter = 2 }, label = { Text("已持有 ${held.size}") })
+        }
+        if (stocks.isNotEmpty()) {
+            OutlinedTextField(
+                query, { query = it },
+                placeholder = { Text("搜尋代號或名稱") },
+                leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
+                trailingIcon = {
+                    if (query.isNotEmpty()) IconButton(onClick = { query = "" }) { Icon(Icons.Rounded.Close, contentDescription = "清除搜尋") }
+                },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp),
+            )
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 2.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("排序", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                WatchSort.entries.forEach { by ->
+                    val on = settings.watchSort == by
+                    val arrow = if (!on) "" else if (settings.watchSortDesc) " ↓" else " ↑"
+                    FilterChip(
+                        selected = on,
+                        onClick = {
+                            Store.updateSettings {
+                                if (it.watchSort == by) it.copy(watchSortDesc = !it.watchSortDesc)
+                                else it.copy(watchSort = by, watchSortDesc = Watch.defaultDesc(by))
+                            }
+                        },
+                        label = { Text(by.label + arrow) },
+                    )
+                }
+            }
+            if (query.isNotBlank()) {
+                Text("找到 ${shown.size} 檔", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 20.dp))
+            }
         }
 
         if (stocks.isEmpty()) {
@@ -150,6 +197,10 @@ private fun StockRow(s: Stock, hits: List<ShotHit>, today: String, onClick: () -
                 modifier = Modifier.weight(1f, fill = false))
             Spacer(Modifier.size(8.dp))
             Text(s.code, fontFamily = Mono, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (Watch.isLimitUp(s)) {
+                Spacer(Modifier.size(8.dp))
+                Pill("漲停", m.up, MaterialTheme.colorScheme.surfaceContainer)
+            }
             val score = hits.latestScore()
             if (score.isNotBlank()) {
                 Spacer(Modifier.size(8.dp))

@@ -23,6 +23,9 @@ data class Settings(
     /** Google Sheet（Apps Script …/exec）網址和 token，讀 FIN_SK 的每週選股。 */
     val sheetUrl: String = "",
     val sheetToken: String = "",
+    /** 觀察清單排序（記住上次選的）。 */
+    val watchSort: WatchSort = WatchSort.ADDED,
+    val watchSortDesc: Boolean = false,
 )
 
 class SettingsStore(context: Context) {
@@ -48,6 +51,8 @@ class SettingsStore(context: Context) {
             deepseekModel = prefs.getString("deepseekModel", d.deepseekModel)!!.let { if (it == DeepSeek.LEGACY_MODEL) DeepSeek.DEFAULT_MODEL else it },
             sheetUrl = prefs.getString("sheetUrl", d.sheetUrl)!!,
             sheetToken = prefs.getString("sheetToken", d.sheetToken)!!,
+            watchSort = runCatching { WatchSort.valueOf(prefs.getString("watchSort", d.watchSort.name)!!) }.getOrDefault(d.watchSort),
+            watchSortDesc = prefs.getBoolean("watchSortDesc", d.watchSortDesc),
         )
     }
 
@@ -68,6 +73,8 @@ class SettingsStore(context: Context) {
             .putString("deepseekModel", s.deepseekModel)
             .putString("sheetUrl", s.sheetUrl)
             .putString("sheetToken", s.sheetToken)
+            .putString("watchSort", s.watchSort.name)
+            .putBoolean("watchSortDesc", s.watchSortDesc)
             .apply()
     }
 }
