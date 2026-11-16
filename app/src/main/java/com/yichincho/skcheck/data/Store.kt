@@ -254,9 +254,33 @@ object Store {
         saveSnapshots()
     }
 
+    /** 把 Google Sheet 讀到的每一週存成（或更新）一筆沒有圖片的紀錄；回傳新增幾週。 */
+    fun syncSheetWeeks(weeks: List<Sheet.Week>): Int {
+        var added = 0
+        synchronized(this) {
+            val byId = snapshots.value.associateBy { it.id }
+            val fresh = weeks.map { w ->
+                val old = byId[Sheet.snapshotId(w.week)]
+                if (old == null) added++
+                Sheet.toSnapshot(w, old)
+            }
+            val freshIds = fresh.map { it.id }.toSet()
+            snapshots.value = (fresh + snapshots.value.filterNot { it.id in freshIds }).sortedByDescending { it.createdAt }
+        }
+        saveSnapshots()
+        // 重複選到的股票，漲跌基準一律用最新那次的買進價
+        val latest = Sheet.latestByCode(weeks)
+        var changed = false
+        synchronized(this) {
+            stocks.value = stocks.value.map { s -> Sheet.rebase(s, latest)?.also { changed = true } ?: s }
+        }
+        if (changed) saveStocks()
+        return added
+    }
+
     fun deleteSnapshot(id: String) {
         val s = snapshots.value.firstOrNull { it.id == id } ?: return
-        shotFile(s.imageFile).delete()
+        if (s.imageFile.isNotBlank()) shotFile(s.imageFile).delete()
         synchronized(this) { snapshots.value = snapshots.value.filterNot { it.id == id } }
         saveSnapshots()
     }

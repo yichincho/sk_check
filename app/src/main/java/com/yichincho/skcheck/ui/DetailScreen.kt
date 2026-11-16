@@ -220,7 +220,7 @@ fun DetailScreen(symbol: String, onBack: () -> Unit, onTrade: (Side) -> Unit, on
             otherShots.forEach { sh ->
                 Panel(Modifier.clickable { onOpenShot(sh.id) }) {
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        ShotImage(sh.imageFile, Modifier.size(width = 96.dp, height = 72.dp).clip(RoundedCornerShape(6.dp))
+                        if (sh.imageFile.isNotBlank()) ShotImage(sh.imageFile, Modifier.size(width = 96.dp, height = 72.dp).clip(RoundedCornerShape(6.dp))
                             .clickable { zoom = sh.imageFile }, maxSide = 400, crop = true)
                         Column(Modifier.weight(1f)) {
                             Text(fmtDateMs(sh.createdAt), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -269,7 +269,7 @@ private fun ShotHistoryCard(hit: ShotHit, s: Stock, onOpen: (String) -> Unit, on
             }
         }
         Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            ShotImage(sh.imageFile, Modifier.size(width = 96.dp, height = 72.dp).clip(RoundedCornerShape(6.dp))
+            if (sh.imageFile.isNotBlank()) ShotImage(sh.imageFile, Modifier.size(width = 96.dp, height = 72.dp).clip(RoundedCornerShape(6.dp))
                 .clickable { onZoom(sh.imageFile) }, maxSide = 400, crop = true)
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 if (row.reason.isNotBlank()) Text(row.reason, fontSize = 13.sp)

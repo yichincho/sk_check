@@ -20,6 +20,9 @@ data class Settings(
     val geminiModels: List<String> = listOf(Gemini.DEFAULT_MODEL),
     val deepseekKey: String = "",
     val deepseekModel: String = DeepSeek.DEFAULT_MODEL,
+    /** Google Sheet（Apps Script …/exec）網址和 token，讀 FIN_SK 的每週選股。 */
+    val sheetUrl: String = "",
+    val sheetToken: String = "",
 )
 
 class SettingsStore(context: Context) {
@@ -43,6 +46,8 @@ class SettingsStore(context: Context) {
                 ?.takeIf { it.isNotEmpty() } ?: d.geminiModels,
             deepseekKey = prefs.getString("deepseekKey", d.deepseekKey)!!,
             deepseekModel = prefs.getString("deepseekModel", d.deepseekModel)!!.let { if (it == DeepSeek.LEGACY_MODEL) DeepSeek.DEFAULT_MODEL else it },
+            sheetUrl = prefs.getString("sheetUrl", d.sheetUrl)!!,
+            sheetToken = prefs.getString("sheetToken", d.sheetToken)!!,
         )
     }
 
@@ -61,6 +66,8 @@ class SettingsStore(context: Context) {
             .putString("geminiModels", s.geminiModels.joinToString("\n"))
             .putString("deepseekKey", s.deepseekKey)
             .putString("deepseekModel", s.deepseekModel)
+            .putString("sheetUrl", s.sheetUrl)
+            .putString("sheetToken", s.sheetToken)
             .apply()
     }
 }

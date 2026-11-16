@@ -45,6 +45,7 @@ import com.yichincho.skcheck.data.DeepSeek
 import com.yichincho.skcheck.data.Gemini
 import com.yichincho.skcheck.data.NetException
 import com.yichincho.skcheck.data.Nvidia
+import com.yichincho.skcheck.data.Sheet
 import com.yichincho.skcheck.data.Store
 import com.yichincho.skcheck.data.fmtNum
 import com.yichincho.skcheck.work.Notifier
@@ -65,6 +66,8 @@ fun SettingsScreen(onAskNotify: () -> Unit) {
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         Text("設定", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+
+        SheetPanel(settings.sheetUrl, settings.sheetToken)
 
         Text("截圖辨識依序用 NVIDIA → Gemini → DeepSeek，有填金鑰的才會用；一家失敗就自動換下一家。金鑰只存在這支手機。",
             fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -259,6 +262,54 @@ private fun ModelChoice(models: List<String>, chosen: String, onPick: (String) -
             RadioButton(selected = chosen == m, onClick = null)
             Text(m, fontFamily = Mono, fontSize = 12.sp, modifier = Modifier.weight(1f).padding(start = 8.dp))
             Text("#${i + 1}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+/** FIN_SK 每週選股的 Google Sheet：網址 + token，按測試會順便把選股紀錄同步進來。 */
+@Composable
+private fun SheetPanel(initialUrl: String, initialToken: String) {
+    val scope = rememberCoroutineScope()
+    var url by remember { mutableStateOf(initialUrl) }
+    var token by remember { mutableStateOf(initialToken) }
+    var testing by remember { mutableStateOf(false) }
+    var result by remember { mutableStateOf("") }
+    var ok by remember { mutableStateOf(false) }
+    Panel {
+        SectionTitle("Google Sheet 選股（FIN_SK）")
+        Text("FIN_SK 會把每週選股寫進 Google Sheet，這裡直接讀，不用再拍截圖辨識。網址是 Apps Script 部署後的 …/exec。",
+            fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(vertical = 6.dp))
+        OutlinedTextField(url, { url = it.trim() }, label = { Text("網址（…/exec）") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(
+            token, { token = it.trim() }, label = { Text("token") }, singleLine = true,
+            visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+        )
+        Button(
+            onClick = {
+                testing = true
+                result = ""
+                Store.updateSettings { it.copy(sheetUrl = url, sheetToken = token) }
+                scope.launch {
+                    try {
+                        val r = withContext(Dispatchers.IO) { Sheet.fetch(url, token) }
+                        Store.syncSheetWeeks(r.weeks)
+                        ok = true
+                        result = "連線成功：${r.weeks.size} 週、${r.weeks.sumOf { it.rows.size }} 檔（Sheet 更新於 ${r.updatedAt}）"
+                    } catch (e: NetException) {
+                        ok = false
+                        result = e.message ?: "讀取失敗"
+                    } catch (e: Exception) {
+                        ok = false
+                        result = "讀取失敗：${e.message}"
+                    }
+                    testing = false
+                }
+            },
+            enabled = url.isNotBlank() && token.isNotBlank() && !testing,
+            modifier = Modifier.padding(top = 8.dp),
+        ) { Text(if (testing) "讀取中…" else "儲存並測試") }
+        if (result.isNotEmpty()) {
+            Text(result, fontSize = 13.sp, color = if (ok) LocalMarketColors.current.down else MaterialTheme.colorScheme.error)
         }
     }
 }
