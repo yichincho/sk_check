@@ -300,14 +300,14 @@ fun SavedShotScreen(id: String, onBack: () -> Unit, onOpenStock: (String) -> Uni
     }
 
     Column(Modifier.fillMaxSize().imePadding()) {
-        BackBar("截圖紀錄", fmtDateMs(s.createdAt), onBack) {
+        BackBar(if (s.imageFile.isBlank()) "選股紀錄" else "截圖紀錄", fmtDateMs(s.createdAt), onBack) {
             IconButton(onClick = { confirm = true }) { Icon(Icons.Rounded.Delete, contentDescription = "刪除這張截圖") }
         }
         Column(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Panel {
+            if (s.imageFile.isNotBlank()) Panel {
                 ShotImage(s.imageFile, Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp)).clickable { zoom = true })
                 Text("點圖可放大", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
             }
@@ -342,7 +342,7 @@ fun SavedShotScreen(id: String, onBack: () -> Unit, onOpenStock: (String) -> Uni
                     }
                 }
             }
-            if (s.rows.isNotEmpty() && Vision.hasAnyKey(settings)) {
+            if (s.rows.isNotEmpty() && s.imageFile.isNotBlank() && Vision.hasAnyKey(settings)) {
                 OutlinedButton(onClick = { rescans++ }, enabled = busy.isEmpty()) { Text("重新辨識（補品質分數）") }
             }
             if (busy.isNotEmpty()) Text(busy, fontSize = 13.sp)
@@ -350,7 +350,7 @@ fun SavedShotScreen(id: String, onBack: () -> Unit, onOpenStock: (String) -> Uni
             if (s.model.isNotBlank()) Text("辨識模型：${s.model}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
-    if (zoom) ShotViewer(s.imageFile, onDismiss = { zoom = false })
+    if (zoom && s.imageFile.isNotBlank()) ShotViewer(s.imageFile, onDismiss = { zoom = false })
     if (confirm) {
         AlertDialog(
             onDismissRequest = { confirm = false },
